@@ -1,4 +1,5 @@
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import java.util.Properties as SystemProperties
 
 plugins {
     alias(libs.plugins.androidApplication)
@@ -16,13 +17,27 @@ dependencies {
 
     implementation(libs.androidx.activity.compose)
 
+    implementation(libs.compose.runtime)
+    implementation(libs.compose.foundation)
+    implementation(libs.compose.material3)
+    implementation(libs.compose.ui)
     implementation(libs.compose.uiToolingPreview)
     debugImplementation(libs.compose.uiTooling)
+
+    implementation(libs.okhttp)
+    implementation(libs.okhttp.logging)
 }
 
 android {
     namespace = "com.anastasiyaa.smartreminder"
     compileSdk = libs.versions.android.compileSdk.get().toInt()
+
+    val localProps = SystemProperties()
+    val localPropsFile = rootProject.file("local.properties")
+    if (localPropsFile.exists()) {
+        localPropsFile.inputStream().use { stream -> localProps.load(stream) }
+    }
+    val apiKey: String = localProps.getProperty("DEEPSEEK_STUDY_API_KEY", "") ?: ""
 
     defaultConfig {
         applicationId = "com.anastasiyaa.smartreminder"
@@ -30,6 +45,10 @@ android {
         targetSdk = libs.versions.android.targetSdk.get().toInt()
         versionCode = 1
         versionName = "1.0"
+        buildConfigField("String", "API_KEY", "\"$apiKey\"")
+    }
+    buildFeatures {
+        buildConfig = true
     }
     packaging {
         resources {

@@ -3,13 +3,14 @@ package com.anastasiyaa.smartreminder
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -25,49 +26,63 @@ import kotlinx.coroutines.launch
 private sealed interface UiState {
     data object Idle : UiState
     data object Loading : UiState
-    data class Success(val post: Post) : UiState
+    data class Success(val response: ChatResponse) : UiState
     data class Error(val message: String) : UiState
 }
 
 @Composable
 fun ApiDemoScreen() {
+    var prompt by remember { mutableStateOf("Say hello in one short sentence.") }
     var state by remember { mutableStateOf<UiState>(UiState.Idle) }
     val scope = rememberCoroutineScope()
 
-    fun load() {
+    fun ask() {
+        if (prompt.isBlank()) return
         state = UiState.Loading
         scope.launch {
-            state = ApiSample.fetchPost()
+            state = ApiSample.ask(prompt)
                 .fold(
                     onSuccess = { UiState.Success(it) },
                     onFailure = { UiState.Error(it.message ?: "Unknown error") },
                 )
         }
     }
+
     Box(
         Modifier.fillMaxSize(),
-        contentAlignment = Alignment.Center
+        contentAlignment = Alignment.TopCenter
     ) {
         Column(
             modifier = Modifier
-                .fillMaxSize()
-                .padding(PaddingValues(16.dp))
+                .padding(16.dp)
+                .padding(top = 80.dp)
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Text("OkHttp sample", style = MaterialTheme.typography.titleLarge)
-            Text("GET https://jsonplaceholder.typicode.com/posts/1", style = MaterialTheme.typography.bodySmall)
-            Button(onClick = ::load, enabled = state !is UiState.Loading) {
-                Text("Fetch post")
+            Text("DeepSeek sample", style = MaterialTheme.typography.titleLarge)
+            Text("POST https://api.deepseek.com/v1/chat/completions", style = MaterialTheme.typography.bodySmall)
+            OutlinedTextField(
+                value = prompt,
+                onValueChange = { prompt = it },
+                label = { Text("Prompt") },
+                modifier = Modifier.fillMaxWidth(),
+                enabled = state !is UiState.Loading,
+            )
+            Button(
+                onClick = ::ask,
+                enabled = state !is UiState.Loading && prompt.isNotBlank(),
+            ) {
+                Text("Ask DeepSeek")
             }
             when (val current = state) {
-                is UiState.Idle -> Text("Tap the button to load a post.")
+                is UiState.Idle -> Text("Type a prompt and tap Ask DeepSeek.")
                 is UiState.Loading -> Text("Loading...")
                 is UiState.Error -> Text("Error: ${current.message}", color = MaterialTheme.colorScheme.error)
                 is UiState.Success -> {
-                    Text("id: ${current.post.id}  userId: ${current.post.userId}")
-                    Text(current.post.title, style = MaterialTheme.typography.titleMedium)
-                    Text(current.post.body)
+                    if (current.response.model.isNotEmpty()) {
+                        Text("model: ${current.response.model}", style = MaterialTheme.typography.bodySmall)
+                    }
+                    Text(current.response.content)
                 }
             }
         }

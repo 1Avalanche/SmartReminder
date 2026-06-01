@@ -22,7 +22,7 @@ kotlin {
        namespace = "com.anastasiyaa.smartreminder.shared"
        compileSdk = libs.versions.android.compileSdk.get().toInt()
        minSdk = libs.versions.android.minSdk.get().toInt()
-    
+
        compilerOptions {
            jvmTarget = JvmTarget.JVM_11
        }
@@ -37,8 +37,6 @@ kotlin {
     sourceSets {
         androidMain.dependencies {
             implementation(libs.compose.uiToolingPreview)
-            implementation(libs.okhttp)
-            implementation(libs.okhttp.logging)
         }
         commonMain.dependencies {
             implementation(libs.compose.runtime)
