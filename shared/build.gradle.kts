@@ -38,6 +38,7 @@ kotlin {
         androidMain.dependencies {
             implementation(libs.compose.uiToolingPreview)
             implementation(libs.okhttp)
+            implementation(libs.okhttp.logging)
         }
         commonMain.dependencies {
             implementation(libs.compose.runtime)

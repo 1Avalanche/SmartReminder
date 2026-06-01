@@ -1,6 +1,7 @@
 package com.anastasiyaa.smartreminder
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
@@ -16,6 +17,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
@@ -42,27 +44,31 @@ fun ApiDemoScreen() {
                 )
         }
     }
-
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(PaddingValues(16.dp))
-            .verticalScroll(rememberScrollState()),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+    Box(
+        Modifier.fillMaxSize(),
+        contentAlignment = Alignment.Center
     ) {
-        Text("OkHttp sample", style = MaterialTheme.typography.titleLarge)
-        Text("GET https://jsonplaceholder.typicode.com/posts/1", style = MaterialTheme.typography.bodySmall)
-        Button(onClick = ::load, enabled = state !is UiState.Loading) {
-            Text("Fetch post")
-        }
-        when (val current = state) {
-            is UiState.Idle -> Text("Tap the button to load a post.")
-            is UiState.Loading -> Text("Loading...")
-            is UiState.Error -> Text("Error: ${current.message}", color = MaterialTheme.colorScheme.error)
-            is UiState.Success -> {
-                Text("id: ${current.post.id}  userId: ${current.post.userId}")
-                Text(current.post.title, style = MaterialTheme.typography.titleMedium)
-                Text(current.post.body)
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(PaddingValues(16.dp))
+                .verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text("OkHttp sample", style = MaterialTheme.typography.titleLarge)
+            Text("GET https://jsonplaceholder.typicode.com/posts/1", style = MaterialTheme.typography.bodySmall)
+            Button(onClick = ::load, enabled = state !is UiState.Loading) {
+                Text("Fetch post")
+            }
+            when (val current = state) {
+                is UiState.Idle -> Text("Tap the button to load a post.")
+                is UiState.Loading -> Text("Loading...")
+                is UiState.Error -> Text("Error: ${current.message}", color = MaterialTheme.colorScheme.error)
+                is UiState.Success -> {
+                    Text("id: ${current.post.id}  userId: ${current.post.userId}")
+                    Text(current.post.title, style = MaterialTheme.typography.titleMedium)
+                    Text(current.post.body)
+                }
             }
         }
     }
