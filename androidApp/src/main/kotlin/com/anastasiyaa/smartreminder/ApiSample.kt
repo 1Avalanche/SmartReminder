@@ -1,6 +1,7 @@
 package com.anastasiyaa.smartreminder
 
 import android.util.Log
+import androidx.compose.runtime.mutableStateListOf
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
@@ -17,35 +18,78 @@ data class ChatResponse(
     val finishReason: String?,
 )
 
+data class HistoryItem(
+    val prompt: String,
+    val maxTokens: MaxTokens,
+    val temperature: Temperature,
+    val answerFormat: AnswerFormat,
+    val maxCharacters: MaxCharacters,
+    val stopSequence: StopSequence,
+    val requestBody: String,
+    val result: Result<ChatResponse>,
+)
+
 object ApiSample {
     private const val TAG = "ApiSample"
     private const val OKHTTP_TAG = "OkHttp"
     private const val DEEPSEEK_URL = "https://api.deepseek.com/v1/chat/completions"
     private const val MODEL = "deepseek-chat"
-    private const val MAX_TOKENS = 1024
 
     private val client: OkHttpClient = OkHttpClient.Builder()
         .addInterceptor(
             HttpLoggingInterceptor { message -> Log.d(OKHTTP_TAG, message) }
-                .apply { level = HttpLoggingInterceptor.Level.BODY }
+                .apply {
+                    level = HttpLoggingInterceptor.Level.BODY
+                    redactHeader("Authorization")
+                    redactHeader("x-api-key")
+                }
         )
         .build()
 
-    suspend fun ask(prompt: String): Result<ChatResponse> = withContext(Dispatchers.IO) {
-        runCatching {
-            val messages = JSONArray()
-                .put(JSONObject().put("role", "user").put("content", prompt))
-            val requestJson = JSONObject()
-                .put("model", MODEL)
-                .put("max_tokens", MAX_TOKENS)
-                .put("messages", messages)
-                .toString()
+    private val _history = mutableStateListOf<HistoryItem>()
+    val history: List<HistoryItem> get() = _history
 
+    suspend fun ask(
+        prompt: String,
+        maxTokens: MaxTokens = MaxTokens.None,
+        temperature: Temperature = Temperature.None,
+        answerFormat: AnswerFormat = AnswerFormat.None,
+        maxCharacters: MaxCharacters = MaxCharacters.None,
+        stopSequence: StopSequence = StopSequence(""),
+    ): Result<ChatResponse> = withContext(Dispatchers.IO) {
+        val messages = JSONArray()
+        if (answerFormat != AnswerFormat.None) {
+            messages.put(
+                JSONObject()
+                    .put("role", answerFormat.promptLevel.query)
+                    .put("content", answerFormat.queryText)
+            )
+        }
+        if (maxCharacters != MaxCharacters.None) {
+            messages.put(
+                JSONObject()
+                    .put("role", maxCharacters.promptLevel.query)
+                    .put("content", maxCharacters.queryText)
+            )
+        }
+        messages.put(JSONObject().put("role", "user").put("content", prompt))
+        val requestJson = JSONObject().apply {
+            put("model", MODEL)
+            put("messages", messages)
+            maxTokens.value?.let { put("max_tokens", it) }
+            temperature.value?.let { put("temperature", it) }
+            if (stopSequence.value.isNotEmpty()) {
+                put("stop", JSONArray().put(stopSequence.value))
+            }
+        }
+        val requestBodyString = requestJson.toString()
+
+        val result = runCatching {
             val request = Request.Builder()
                 .url(DEEPSEEK_URL)
                 .addHeader("Authorization", "Bearer ${BuildConfig.API_KEY}")
                 .addHeader("Content-Type", "application/json")
-                .post(requestJson.toRequestBody("application/json".toMediaType()))
+                .post(requestBodyString.toRequestBody("application/json".toMediaType()))
                 .build()
 
             client.newCall(request).execute().use { response ->
@@ -73,5 +117,39 @@ object ApiSample {
         }.onFailure { e ->
             Log.w(TAG, "ask failed: ${e.message}", e)
         }
+        _history.add(
+            HistoryItem(
+                prompt = prompt,
+                maxTokens = maxTokens,
+                temperature = temperature,
+                answerFormat = answerFormat,
+                maxCharacters = maxCharacters,
+                stopSequence = stopSequence,
+                requestBody = requestJson.toString(2),
+                result = result,
+            )
+        )
+        result
     }
 }
+
+private enum class PromptLevel(val query: String) {
+    System("system"), Assistant("assistant"), User("user")
+}
+
+private val AnswerFormat.promptLevel: PromptLevel
+    get() = PromptLevel.System
+
+private val AnswerFormat.queryText: String
+    get() = when (this) {
+        AnswerFormat.None -> ""
+        AnswerFormat.JSON -> "Отвечай строго в JSON формате"
+        AnswerFormat.RuText -> "Отвечай только на русском языке вне зависимости от того, на каком был задан вопрос."
+        AnswerFormat.EnText -> "Отвечай только на английском языке вне зависимости от того, на каком был задан вопрос."
+    }
+
+private val MaxCharacters.promptLevel: PromptLevel
+    get() = PromptLevel.System
+
+private val MaxCharacters.queryText: String
+    get() = value?.let { "Ответ должен содержать максимум $it символов. Превышать лимит запрещено." } ?: ""
