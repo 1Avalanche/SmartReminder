@@ -36,6 +36,9 @@ object ApiSample {
     private const val MODEL = "deepseek-chat"
 
     private val client: OkHttpClient = OkHttpClient.Builder()
+        .connectTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+        .readTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
+        .writeTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
         .addInterceptor(
             HttpLoggingInterceptor { message -> Log.d(OKHTTP_TAG, message) }
                 .apply {

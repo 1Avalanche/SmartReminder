@@ -27,6 +27,8 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 
@@ -47,6 +49,7 @@ fun ApiDemoScreen(onShowHistory: () -> Unit = {}) {
     var stopSequence by remember { mutableStateOf("") }
     var state by remember { mutableStateOf<UiState>(UiState.Idle) }
     val scope = rememberCoroutineScope()
+    val clipboard = LocalClipboardManager.current
 
     fun ask() {
         if (prompt.isBlank()) return
@@ -80,48 +83,48 @@ fun ApiDemoScreen(onShowHistory: () -> Unit = {}) {
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Text(
-                "Введи запрос и параметры-ограничения",
-                style = MaterialTheme.typography.titleLarge,
-            )
-            RestrictionSelector(
-                title = "max_tokens",
-                options = MaxTokens.entries,
-                selected = maxTokens,
-                onSelected = { maxTokens = it },
-                label = { it.value?.toString() ?: "—" },
-            )
-            RestrictionSelector(
-                title = "temperature",
-                options = Temperature.entries,
-                selected = temperature,
-                onSelected = { temperature = it },
-                label = { it.value?.toString() ?: "—" },
-            )
-            RestrictionSelector(
-                title = "answer_format",
-                options = AnswerFormat.entries,
-                selected = answerFormat,
-                onSelected = { answerFormat = it },
-                label = { if (it.query == null) "—" else it.name },
-            )
-            RestrictionSelector(
-                title = "max_characters",
-                options = MaxCharacters.entries,
-                selected = maxCharacters,
-                onSelected = { maxCharacters = it },
-                label = { it.value?.toString() ?: "—" },
-            )
-            OutlinedTextField(
-                value = stopSequence,
-                onValueChange = { stopSequence = it },
-                label = { Text("стоп-слово") },
-                modifier = Modifier.fillMaxWidth(),
-                enabled = !loading,
-                trailingIcon = if (stopSequence.isNotEmpty()) {
-                    { ClearInputButton(onClick = { stopSequence = "" }) }
-                } else null,
-            )
+//            Text(
+//                "Введи запрос и параметры-ограничения",
+//                style = MaterialTheme.typography.titleLarge,
+//            )
+//            RestrictionSelector(
+//                title = "max_tokens",
+//                options = MaxTokens.entries,
+//                selected = maxTokens,
+//                onSelected = { maxTokens = it },
+//                label = { it.value?.toString() ?: "—" },
+//            )
+//            RestrictionSelector(
+//                title = "temperature",
+//                options = Temperature.entries,
+//                selected = temperature,
+//                onSelected = { temperature = it },
+//                label = { it.value?.toString() ?: "—" },
+//            )
+//            RestrictionSelector(
+//                title = "answer_format",
+//                options = AnswerFormat.entries,
+//                selected = answerFormat,
+//                onSelected = { answerFormat = it },
+//                label = { if (it.query == null) "—" else it.name },
+//            )
+//            RestrictionSelector(
+//                title = "max_characters",
+//                options = MaxCharacters.entries,
+//                selected = maxCharacters,
+//                onSelected = { maxCharacters = it },
+//                label = { it.value?.toString() ?: "—" },
+//            )
+//            OutlinedTextField(
+//                value = stopSequence,
+//                onValueChange = { stopSequence = it },
+//                label = { Text("стоп-слово") },
+//                modifier = Modifier.fillMaxWidth(),
+//                enabled = !loading,
+//                trailingIcon = if (stopSequence.isNotEmpty()) {
+//                    { ClearInputButton(onClick = { stopSequence = "" }) }
+//                } else null,
+//            )
             OutlinedTextField(
                 value = prompt,
                 onValueChange = { prompt = it },
@@ -150,6 +153,15 @@ fun ApiDemoScreen(onShowHistory: () -> Unit = {}) {
                         Text("model: ${current.response.model}", style = MaterialTheme.typography.bodySmall)
                     }
                     Text(current.response.content)
+                    if (current.response.content.isNotEmpty()) {
+                        OutlinedButton(
+                            onClick = {
+                                clipboard.setText(AnnotatedString(current.response.content))
+                            },
+                        ) {
+                            Text("Копировать ответ")
+                        }
+                    }
                 }
             }
         }
