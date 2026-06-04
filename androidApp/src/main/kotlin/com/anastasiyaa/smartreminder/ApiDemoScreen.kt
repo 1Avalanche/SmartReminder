@@ -89,41 +89,41 @@ fun ApiDemoScreen(onShowHistory: () -> Unit = {}) {
                 "Введи запрос и параметры-ограничения",
                 style = MaterialTheme.typography.titleLarge,
             )
-            RestrictionSelector(
-                title = "max_tokens",
-                options = MaxTokens.entries,
-                selected = maxTokens,
-                onSelected = { maxTokens = it },
-                label = { it.value?.toString() ?: "—" },
-            )
+//            RestrictionSelector(
+//                title = "max_tokens",
+//                options = MaxTokens.entries,
+//                selected = maxTokens,
+//                onSelected = { maxTokens = it },
+//                label = { it.value?.toString() ?: "—" },
+//            )
             TemperatureSelector(
                 temperature = temperature,
                 onTemperatureChange = { temperature = it },
             )
-            RestrictionSelector(
-                title = "answer_format",
-                options = AnswerFormat.entries,
-                selected = answerFormat,
-                onSelected = { answerFormat = it },
-                label = { if (it.query == null) "—" else it.name },
-            )
-            RestrictionSelector(
-                title = "max_characters",
-                options = MaxCharacters.entries,
-                selected = maxCharacters,
-                onSelected = { maxCharacters = it },
-                label = { it.value?.toString() ?: "—" },
-            )
-            OutlinedTextField(
-                value = stopSequence,
-                onValueChange = { stopSequence = it },
-                label = { Text("стоп-слово") },
-                modifier = Modifier.fillMaxWidth(),
-                enabled = !loading,
-                trailingIcon = if (stopSequence.isNotEmpty()) {
-                    { ClearInputButton(onClick = { stopSequence = "" }) }
-                } else null,
-            )
+//            RestrictionSelector(
+//                title = "answer_format",
+//                options = AnswerFormat.entries,
+//                selected = answerFormat,
+//                onSelected = { answerFormat = it },
+//                label = { if (it.query == null) "—" else it.name },
+//            )
+//            RestrictionSelector(
+//                title = "max_characters",
+//                options = MaxCharacters.entries,
+//                selected = maxCharacters,
+//                onSelected = { maxCharacters = it },
+//                label = { it.value?.toString() ?: "—" },
+//            )
+//            OutlinedTextField(
+//                value = stopSequence,
+//                onValueChange = { stopSequence = it },
+//                label = { Text("стоп-слово") },
+//                modifier = Modifier.fillMaxWidth(),
+//                enabled = !loading,
+//                trailingIcon = if (stopSequence.isNotEmpty()) {
+//                    { ClearInputButton(onClick = { stopSequence = "" }) }
+//                } else null,
+//            )
             OutlinedTextField(
                 value = prompt,
                 onValueChange = { prompt = it },
