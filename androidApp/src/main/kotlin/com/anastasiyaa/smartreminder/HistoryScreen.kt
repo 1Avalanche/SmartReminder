@@ -109,7 +109,7 @@ private fun SectionBlock(
 
 private fun HistoryItem.restrictionLines(): List<String> = buildList {
     maxTokens.value?.let { add("max_tokens: $it") }
-    temperature.value?.let { add("temperature: $it") }
+    temperature?.let { add("temperature: $it") }
     if (answerFormat != AnswerFormat.None) {
         add("answer_format: ${answerFormat.name}")
     }

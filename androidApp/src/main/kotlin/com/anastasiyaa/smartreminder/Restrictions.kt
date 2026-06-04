@@ -9,15 +9,6 @@ enum class MaxTokens(val value: Int?) {
     Huge(1024),
 }
 
-enum class Temperature(val value: Double?) {
-    None(null),
-    Zero(0.0),
-    Low(0.5),
-    Medium(1.0),
-    High(1.5),
-    Max(2.0),
-}
-
 enum class AnswerFormat(val query: String?) {
     None(null),
     JSON("json"),

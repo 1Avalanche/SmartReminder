@@ -18,6 +18,7 @@ import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -30,6 +31,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
+import kotlin.math.roundToInt
 import kotlinx.coroutines.launch
 
 private sealed interface UiState {
@@ -43,7 +45,7 @@ private sealed interface UiState {
 fun ApiDemoScreen(onShowHistory: () -> Unit = {}) {
     var prompt by remember { mutableStateOf("") }
     var maxTokens by remember { mutableStateOf(MaxTokens.None) }
-    var temperature by remember { mutableStateOf(Temperature.None) }
+    var temperature by remember { mutableStateOf<Double?>(null) }
     var answerFormat by remember { mutableStateOf(AnswerFormat.None) }
     var maxCharacters by remember { mutableStateOf(MaxCharacters.None) }
     var stopSequence by remember { mutableStateOf("") }
@@ -83,48 +85,45 @@ fun ApiDemoScreen(onShowHistory: () -> Unit = {}) {
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-//            Text(
-//                "Введи запрос и параметры-ограничения",
-//                style = MaterialTheme.typography.titleLarge,
-//            )
-//            RestrictionSelector(
-//                title = "max_tokens",
-//                options = MaxTokens.entries,
-//                selected = maxTokens,
-//                onSelected = { maxTokens = it },
-//                label = { it.value?.toString() ?: "—" },
-//            )
-//            RestrictionSelector(
-//                title = "temperature",
-//                options = Temperature.entries,
-//                selected = temperature,
-//                onSelected = { temperature = it },
-//                label = { it.value?.toString() ?: "—" },
-//            )
-//            RestrictionSelector(
-//                title = "answer_format",
-//                options = AnswerFormat.entries,
-//                selected = answerFormat,
-//                onSelected = { answerFormat = it },
-//                label = { if (it.query == null) "—" else it.name },
-//            )
-//            RestrictionSelector(
-//                title = "max_characters",
-//                options = MaxCharacters.entries,
-//                selected = maxCharacters,
-//                onSelected = { maxCharacters = it },
-//                label = { it.value?.toString() ?: "—" },
-//            )
-//            OutlinedTextField(
-//                value = stopSequence,
-//                onValueChange = { stopSequence = it },
-//                label = { Text("стоп-слово") },
-//                modifier = Modifier.fillMaxWidth(),
-//                enabled = !loading,
-//                trailingIcon = if (stopSequence.isNotEmpty()) {
-//                    { ClearInputButton(onClick = { stopSequence = "" }) }
-//                } else null,
-//            )
+            Text(
+                "Введи запрос и параметры-ограничения",
+                style = MaterialTheme.typography.titleLarge,
+            )
+            RestrictionSelector(
+                title = "max_tokens",
+                options = MaxTokens.entries,
+                selected = maxTokens,
+                onSelected = { maxTokens = it },
+                label = { it.value?.toString() ?: "—" },
+            )
+            TemperatureSelector(
+                temperature = temperature,
+                onTemperatureChange = { temperature = it },
+            )
+            RestrictionSelector(
+                title = "answer_format",
+                options = AnswerFormat.entries,
+                selected = answerFormat,
+                onSelected = { answerFormat = it },
+                label = { if (it.query == null) "—" else it.name },
+            )
+            RestrictionSelector(
+                title = "max_characters",
+                options = MaxCharacters.entries,
+                selected = maxCharacters,
+                onSelected = { maxCharacters = it },
+                label = { it.value?.toString() ?: "—" },
+            )
+            OutlinedTextField(
+                value = stopSequence,
+                onValueChange = { stopSequence = it },
+                label = { Text("стоп-слово") },
+                modifier = Modifier.fillMaxWidth(),
+                enabled = !loading,
+                trailingIcon = if (stopSequence.isNotEmpty()) {
+                    { ClearInputButton(onClick = { stopSequence = "" }) }
+                } else null,
+            )
             OutlinedTextField(
                 value = prompt,
                 onValueChange = { prompt = it },
@@ -179,6 +178,41 @@ private fun ClearInputButton(onClick: () -> Unit) {
         ),
     ) {
         Text("x")
+    }
+}
+
+@Composable
+private fun TemperatureSelector(
+    temperature: Double?,
+    onTemperatureChange: (Double?) -> Unit,
+) {
+    val sliderValue = temperature?.toFloat() ?: 1f
+
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text("temperature", style = MaterialTheme.typography.labelLarge)
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+//            FilterChip(
+//                selected = temperature == null,
+//                onClick = {
+//                    onTemperatureChange(if (temperature == null) 1.0 else null)
+//                },
+//                label = { Text("—") },
+//            )
+            Slider(
+                value = sliderValue,
+                onValueChange = { onTemperatureChange((it * 10).roundToInt() / 10.0) },
+                valueRange = 0f..2f,
+                modifier = Modifier.weight(1f),
+            )
+            Text(
+                "%.1f".format(sliderValue.toDouble()),
+                style = MaterialTheme.typography.bodyMedium,
+            )
+        }
     }
 }
 

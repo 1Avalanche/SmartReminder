@@ -21,7 +21,7 @@ data class ChatResponse(
 data class HistoryItem(
     val prompt: String,
     val maxTokens: MaxTokens,
-    val temperature: Temperature,
+    val temperature: Double?,
     val answerFormat: AnswerFormat,
     val maxCharacters: MaxCharacters,
     val stopSequence: StopSequence,
@@ -55,7 +55,7 @@ object ApiSample {
     suspend fun ask(
         prompt: String,
         maxTokens: MaxTokens = MaxTokens.None,
-        temperature: Temperature = Temperature.None,
+        temperature: Double? = null,
         answerFormat: AnswerFormat = AnswerFormat.None,
         maxCharacters: MaxCharacters = MaxCharacters.None,
         stopSequence: StopSequence = StopSequence(""),
@@ -80,7 +80,7 @@ object ApiSample {
             put("model", MODEL)
             put("messages", messages)
             maxTokens.value?.let { put("max_tokens", it) }
-            temperature.value?.let { put("temperature", it) }
+            temperature?.let { put("temperature", it) }
             if (stopSequence.value.isNotEmpty()) {
                 put("stop", JSONArray().put(stopSequence.value))
             }
