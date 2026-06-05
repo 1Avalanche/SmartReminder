@@ -44,6 +44,8 @@ private sealed interface UiState {
 @Composable
 fun ApiDemoScreen(onShowHistory: () -> Unit = {}) {
     var prompt by remember { mutableStateOf("") }
+    var modelFamily by remember { mutableStateOf(ModelFamily.DeepSeek) }
+    var model by remember { mutableStateOf(Model.DeepSeekR1) }
     var maxTokens by remember { mutableStateOf(MaxTokens.None) }
     var temperature by remember { mutableStateOf<Double?>(null) }
     var answerFormat by remember { mutableStateOf(AnswerFormat.None) }
@@ -59,6 +61,7 @@ fun ApiDemoScreen(onShowHistory: () -> Unit = {}) {
         scope.launch {
             state = ApiSample.ask(
                 prompt = prompt,
+                model = model,
                 maxTokens = maxTokens,
                 temperature = temperature,
                 answerFormat = answerFormat,
@@ -89,13 +92,23 @@ fun ApiDemoScreen(onShowHistory: () -> Unit = {}) {
                 "Введи запрос и параметры-ограничения",
                 style = MaterialTheme.typography.titleLarge,
             )
-//            RestrictionSelector(
-//                title = "max_tokens",
-//                options = MaxTokens.entries,
-//                selected = maxTokens,
-//                onSelected = { maxTokens = it },
-//                label = { it.value?.toString() ?: "—" },
-//            )
+            RestrictionSelector(
+                title = "Семейство моделей",
+                options = ModelFamily.entries,
+                selected = modelFamily,
+                onSelected = {
+                    modelFamily = it
+                    model = Model.entries.first { m -> m.family == it }
+                },
+                label = { it.name },
+            )
+            RestrictionSelector(
+                title = "Модель",
+                options = Model.entries.filter { it.family == modelFamily },
+                selected = model,
+                onSelected = { model = it },
+                label = { it.modelId },
+            )
             TemperatureSelector(
                 temperature = temperature,
                 onTemperatureChange = { temperature = it },
@@ -138,20 +151,35 @@ fun ApiDemoScreen(onShowHistory: () -> Unit = {}) {
                 onClick = ::ask,
                 enabled = !loading && prompt.isNotBlank(),
             ) {
-                Text("Ask DeepSeek")
+                Text("Отправить запрос")
             }
             OutlinedButton(onClick = onShowHistory) {
                 Text("Показать историю запросов")
             }
             when (val current = state) {
-                is UiState.Idle -> Text("Type a prompt and tap Ask DeepSeek.")
+                is UiState.Idle -> Text("Введи запрос и отправь его.")
                 is UiState.Loading -> Text("Loading...")
                 is UiState.Error -> Text("Error: ${current.message}", color = MaterialTheme.colorScheme.error)
                 is UiState.Success -> {
-                    if (current.response.model.isNotEmpty()) {
-                        Text("model: ${current.response.model}", style = MaterialTheme.typography.bodySmall)
+                    val resp = current.response
+                    val techColor = MaterialTheme.colorScheme.primary
+                    if (resp.model.isNotEmpty()) {
+                        Text("model: ${resp.model}", style = MaterialTheme.typography.bodySmall, color = techColor)
                     }
-                    Text(current.response.content)
+                    Text(
+                        "time: ${"%.1f".format(resp.elapsedMs / 1000.0)} s",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = techColor
+                    )
+                    resp.totalTokens?.let {
+                        Text(
+                            "tokens: $it",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = techColor
+                        )
+                    }
+                    resp.cost?.let { Text("cost: $it", style = MaterialTheme.typography.bodySmall, color = techColor) }
+                    Text(resp.content)
                     if (current.response.content.isNotEmpty()) {
                         OutlinedButton(
                             onClick = {
@@ -195,18 +223,19 @@ private fun TemperatureSelector(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             modifier = Modifier.fillMaxWidth(),
         ) {
-//            FilterChip(
-//                selected = temperature == null,
-//                onClick = {
-//                    onTemperatureChange(if (temperature == null) 1.0 else null)
-//                },
-//                label = { Text("—") },
-//            )
+            FilterChip(
+                selected = temperature == null,
+                onClick = {
+                    onTemperatureChange(if (temperature == null) 1.0 else null)
+                },
+                label = { Text("—") },
+            )
             Slider(
                 value = sliderValue,
                 onValueChange = { onTemperatureChange((it * 10).roundToInt() / 10.0) },
                 valueRange = 0f..2f,
                 modifier = Modifier.weight(1f),
+                enabled = temperature != null,
             )
             Text(
                 "%.1f".format(sliderValue.toDouble()),

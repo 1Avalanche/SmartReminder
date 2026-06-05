@@ -38,6 +38,7 @@ android {
         localPropsFile.inputStream().use { stream -> localProps.load(stream) }
     }
     val apiKey: String = localProps.getProperty("DEEPSEEK_STUDY_API_KEY", "") ?: ""
+    val openRouterApiKey: String = localProps.getProperty("OPENROUTER_STUDY_API_KEY", "") ?: ""
 
     defaultConfig {
         applicationId = "com.anastasiyaa.smartreminder"
@@ -46,6 +47,7 @@ android {
         versionCode = 1
         versionName = "1.0"
         buildConfigField("String", "API_KEY", "\"$apiKey\"")
+        buildConfigField("String", "OPENROUTER_API_KEY", "\"$openRouterApiKey\"")
     }
     buildFeatures {
         buildConfig = true

@@ -16,6 +16,9 @@ data class ChatResponse(
     val content: String,
     val model: String,
     val finishReason: String?,
+    val elapsedMs: Long,
+    val totalTokens: Int?,
+    val cost: String?,
 )
 
 data class HistoryItem(
@@ -32,8 +35,7 @@ data class HistoryItem(
 object ApiSample {
     private const val TAG = "ApiSample"
     private const val OKHTTP_TAG = "OkHttp"
-    private const val DEEPSEEK_URL = "https://api.deepseek.com/v1/chat/completions"
-    private const val MODEL = "deepseek-chat"
+    private const val OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 
     private val client: OkHttpClient = OkHttpClient.Builder()
         .connectTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
@@ -54,6 +56,7 @@ object ApiSample {
 
     suspend fun ask(
         prompt: String,
+        model: Model = Model.DeepSeekR1,
         maxTokens: MaxTokens = MaxTokens.None,
         temperature: Double? = null,
         answerFormat: AnswerFormat = AnswerFormat.None,
@@ -77,7 +80,7 @@ object ApiSample {
         }
         messages.put(JSONObject().put("role", "user").put("content", prompt))
         val requestJson = JSONObject().apply {
-            put("model", MODEL)
+            put("model", model.modelId)
             put("messages", messages)
             maxTokens.value?.let { put("max_tokens", it) }
             temperature?.let { put("temperature", it) }
@@ -88,9 +91,10 @@ object ApiSample {
         val requestBodyString = requestJson.toString()
 
         val result = runCatching {
+            val startMs = System.currentTimeMillis()
             val request = Request.Builder()
-                .url(DEEPSEEK_URL)
-                .addHeader("Authorization", "Bearer ${BuildConfig.API_KEY}")
+                .url(OPENROUTER_URL)
+                .addHeader("Authorization", "Bearer ${BuildConfig.OPENROUTER_API_KEY}")
                 .addHeader("Content-Type", "application/json")
                 .post(requestBodyString.toRequestBody("application/json".toMediaType()))
                 .build()
@@ -102,6 +106,8 @@ object ApiSample {
                 }
                 val body = response.body?.string().orEmpty()
                 val json = JSONObject(body)
+                val elapsedMs = System.currentTimeMillis() - startMs
+                val usage = json.optJSONObject("usage")
                 val content = json.getJSONArray("choices")
                     .getJSONObject(0)
                     .getJSONObject("message")
@@ -113,6 +119,9 @@ object ApiSample {
                         .getJSONObject(0)
                         .optString("finish_reason")
                         .takeIf { it.isNotEmpty() },
+                    elapsedMs = elapsedMs,
+                    totalTokens = usage?.optInt("total_tokens"),
+                    cost = usage?.optDouble("cost")?.takeIf { it > 0 }?.let { "%.6f".format(it) },
                 )
             }
         }.onSuccess { resp ->

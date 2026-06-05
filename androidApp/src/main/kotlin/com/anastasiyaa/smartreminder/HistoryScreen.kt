@@ -19,6 +19,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.foundation.background
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.runtime.remember
 import androidx.compose.ui.unit.dp
 
 @Composable
@@ -27,6 +30,7 @@ fun HistoryScreen(onBack: () -> Unit) {
 
     val history = ApiSample.history
     val clipboard = LocalClipboardManager.current
+    val stats = remember(history) { history.computeModelStats() }
 
     Column(
         modifier = Modifier
@@ -44,13 +48,27 @@ fun HistoryScreen(onBack: () -> Unit) {
                 TextButton(onClick = onBack) { Text("← Назад") }
                 TextButton(
                     onClick = {
-                        clipboard.setText(AnnotatedString(history.asPlainText()))
+                        val text = buildString {
+                            if (stats.isNotEmpty()) {
+                                appendLine("=== Аналитика ===")
+                                appendLine()
+                                append(stats.statsAsPlainText())
+                                appendLine()
+                                appendLine()
+                            }
+                            append(history.asPlainText())
+                        }
+                        clipboard.setText(AnnotatedString(text))
                     },
-                    enabled = history.isNotEmpty(),
+                    enabled = history.isNotEmpty() || stats.isNotEmpty(),
                 ) { Text("Копировать всё") }
             }
             Text("История запросов", style = MaterialTheme.typography.titleLarge)
         }
+        if (stats.isNotEmpty()) {
+            AnalyticsSection(stats)
+        }
+
         if (history.isEmpty()) {
             Text(
                 "Пока пусто.",
@@ -144,3 +162,109 @@ private fun List<HistoryItem>.asPlainText(): String =
             append(item.responseText())
         }
     }
+
+private fun List<ModelStats>.statsAsPlainText(): String {
+    if (isEmpty()) return ""
+    return buildString {
+        appendLine("По времени ответа (от быстрых к медленным):")
+        sortedBy { it.avgTimeMs }.forEachIndexed { i, s ->
+            appendLine("  ${i + 1}. ${s.modelName.modelDisplayName()} — ${"%.1f".format(s.avgTimeMs / 1000.0)}с")
+        }
+        appendLine()
+        appendLine("По токенам (от меньших к большим):")
+        sortedBy { it.avgTokens }.forEachIndexed { i, s ->
+            appendLine("  ${i + 1}. ${s.modelName.modelDisplayName()} — ${"%.0f".format(s.avgTokens)}")
+        }
+        appendLine()
+        appendLine("По стоимости (от дешёвых к дорогим):")
+        sortedBy { it.avgCost }.forEachIndexed { i, s ->
+            appendLine("  ${i + 1}. ${s.modelName.modelDisplayName()} — ${"%.6f".format(s.avgCost)}\$")
+        }
+    }
+}
+
+private data class ModelStats(
+    val modelName: String,
+    val avgTimeMs: Double,
+    val avgTokens: Double,
+    val avgCost: Double,
+)
+
+private fun List<HistoryItem>.computeModelStats(): List<ModelStats> {
+    val groups = filter { it.result.isSuccess }
+        .mapNotNull { item ->
+            val resp = item.result.getOrNull() ?: return@mapNotNull null
+            val cost = resp.cost?.toDoubleOrNull() ?: return@mapNotNull null
+            resp to cost
+        }
+        .groupBy { (resp, _) -> resp.model }
+
+    if (groups.isEmpty()) return emptyList()
+
+    return groups.map { (model, entries) ->
+        val times = entries.map { it.first.elapsedMs.toDouble() }
+        val tokens = entries.mapNotNull { it.first.totalTokens?.toDouble() }
+        val costs = entries.map { it.second }
+        ModelStats(
+            modelName = model,
+            avgTimeMs = times.average(),
+            avgTokens = if (tokens.isEmpty()) 0.0 else tokens.average(),
+            avgCost = costs.average(),
+        )
+    }
+}
+
+private fun String.modelDisplayName(): String {
+    val model = Model.values().find { it.modelId == this }
+    return model?.name ?: substringAfterLast('/')
+}
+
+@Composable
+private fun AnalyticsSection(stats: List<ModelStats>) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp)
+            .background(
+                MaterialTheme.colorScheme.surfaceVariant,
+                RoundedCornerShape(12.dp),
+            )
+            .padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Text("Аналитика", style = MaterialTheme.typography.titleSmall)
+
+        RankingBlock(
+            title = "По времени ответа:",
+            items = stats.sortedBy { it.avgTimeMs },
+            format = { "%.1fс".format(it.avgTimeMs / 1000.0) },
+        )
+        RankingBlock(
+            title = "По токенам:",
+            items = stats.sortedBy { it.avgTokens },
+            format = { "%.0f".format(it.avgTokens) },
+        )
+        RankingBlock(
+            title = "По стоимости:",
+            items = stats.sortedBy { it.avgCost },
+            format = { "%s\$".format("%.6f".format(it.avgCost)) },
+        )
+    }
+}
+
+@Composable
+private fun RankingBlock(
+    title: String,
+    items: List<ModelStats>,
+    format: (ModelStats) -> String,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Text(title, style = MaterialTheme.typography.labelSmall)
+        items.forEachIndexed { index, stat ->
+            Text(
+                "${index + 1}. ${stat.modelName.modelDisplayName()} — ${format(stat)}",
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
+    }
+}
