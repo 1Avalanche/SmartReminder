@@ -17,8 +17,8 @@ import kotlin.concurrent.thread
 private object Colors {
     const val RESET = "\u001B[0m"
     const val BRIGHT_GREEN = "\u001B[92m"
-    const val GREEN = "\u001B[32m"
-    const val YELLOW = "\u001B[33m"
+    const val LIGHT_GREEN = "\u001B[38;5;158m"
+    const val LIGHT_YELLOW = "\u001B[38;5;230m"
     const val DARK_GRAY = "\u001B[90m"
     const val LIGHT_GRAY = "\u001B[90m"
     const val BRIGHT_WHITE = "\u001B[97m"
@@ -222,10 +222,10 @@ fun main(args: Array<String>) {
                 println("Chat history cleared.")
             }
             input == "/models" -> {
-                println(Colors.YELLOW + "Available models names:" + Colors.RESET)
+                println(Colors.LIGHT_YELLOW + "Available models names:" + Colors.RESET)
                 ModelConfig.entries.forEachIndexed { index, model ->
                     val check = if (model == currentModel) "✅ " else ""
-                    println(Colors.YELLOW + "  ${index + 1}. $check${model.shortName}" + Colors.RESET)
+                    println(Colors.LIGHT_YELLOW + "  ${index + 1}. $check${model.shortName}" + Colors.RESET)
                     println(Colors.LIGHT_GRAY + "     ${model.description}" + Colors.RESET)
                 }
                 println()
@@ -249,7 +249,7 @@ fun main(args: Array<String>) {
 }
 
 private fun showHelp() {
-    println(Colors.YELLOW + """
+    println(Colors.LIGHT_YELLOW + """
 Commands:
   /exit, /quit           Exit the program
   /help                  Show this help
@@ -268,8 +268,8 @@ private fun showHistory() {
     }
     historyLog.forEachIndexed { i, entry ->
         println("--- Exchange ${i + 1} ---")
-        println("${Colors.GREEN}Пользователь ввел:${Colors.RESET} ${entry.userInput}")
-        println("${Colors.YELLOW}В запрос ушло:${Colors.RESET} ${entry.requestPayload}")
+        println("${Colors.LIGHT_GREEN}Пользователь ввел:${Colors.RESET} ${entry.userInput}")
+        println("${Colors.LIGHT_YELLOW}В запрос ушло:${Colors.RESET} ${entry.requestPayload}")
         println("${Colors.LIGHT_VIOLET}Ответ от API:${Colors.RESET} ${entry.apiResponse}")
         println()
     }
