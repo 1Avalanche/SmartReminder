@@ -119,7 +119,12 @@ private fun logNetworkCall(
     sb.appendLine("--- Request headers ---")
     requestHeaders.forEach { (k, v) -> sb.appendLine("  $k: ${if (k.equals("Authorization", true)) maskAuth(v) else v}" ) }
     sb.appendLine("--- Request body ---")
-    sb.appendLine(requestBody)
+    sb.appendLine(requestBody
+        .replace("{", "\n{")
+        .replace("[", "\n[")
+        .replace("}", "\n}")
+        .replace("]", "\n]")
+    )
     sb.appendLine("--- Response: $statusCode ---")
     sb.appendLine("--- Response headers ---")
     responseHeaders.forEach { (k, v) -> sb.appendLine("  $k: $v") }
