@@ -3,8 +3,8 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-if [ -z "${DEEPSEEK_STUDY_API_KEY:-}" ] && [ -z "${QWEN_STUDY_API_KEY:-}" ]; then
-  echo "Note: Add DEEPSEEK_STUDY_API_KEY or QWEN_STUDY_API_KEY to local.properties" >&2
+if [ -z "${DEEPSEEK_STUDY_API_KEY:-}" ] && [ -z "${OPENROUTER_STUDY_API_KEY:-}" ]; then
+  echo "Note: Add DEEPSEEK_STUDY_API_KEY or OPENROUTER_STUDY_API_KEY to local.properties" >&2
   echo ""
 fi
 
