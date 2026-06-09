@@ -9,8 +9,4 @@ if [ -z "${DEEPSEEK_STUDY_API_KEY:-}" ] && [ -z "${OPENROUTER_STUDY_API_KEY:-}" 
 fi
 
 GRADLE_OPTS="${GRADLE_OPTS:-} -Dorg.gradle.appname=SmartReminder"
-if [ $# -gt 0 ]; then
-  exec ./gradlew :cli:run --console=plain --args="${*}"
-else
-  exec ./gradlew :cli:run --console=plain
-fi
+exec ./gradlew :cli:run --console=plain

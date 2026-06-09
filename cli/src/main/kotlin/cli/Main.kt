@@ -1,9 +1,8 @@
 package cli
 
-fun main(args: Array<String>) {
+fun main() {
     val session = ChatSession()
-    val selectedModel = parseArgs(args) ?: return
-    session.switchModel(selectedModel)
+    session.switchModel(Config.loadLastModel() ?: ModelConfig.DEEPSEEK)
 
     val client = ChatClient(session)
 
@@ -12,31 +11,6 @@ fun main(args: Array<String>) {
     println("Type /help for commands, /exit to quit.${Colors.RESET}\n")
 
     runRepl(session, client)
-}
-
-private fun parseArgs(args: Array<String>): ModelConfig? {
-    var selected: ModelConfig = ModelConfig.DEEPSEEK
-    var i = 0
-    while (i < args.size) {
-        when (args[i]) {
-            "--model", "-m" -> {
-                if (i + 1 < args.size) {
-                    val name = args[++i]
-                    selected = ModelConfig.fromName(name) ?: run {
-                        println("Unknown model: $name. Available: ${ModelConfig.entries.joinToString { it.shortName }}")
-                        return null
-                    }
-                } else {
-                    println("Error: --model requires a value")
-                    return null
-                }
-            }
-            "--help", "-h" -> { printUsage(); return null }
-            else -> { println("Unknown option: ${args[i]}"); printUsage(); return null }
-        }
-        i++
-    }
-    return selected
 }
 
 private fun runRepl(session: ChatSession, client: ChatClient) {
@@ -98,19 +72,10 @@ private fun switchModel(session: ChatSession, name: String) {
     val found = ModelConfig.fromName(name)
     if (found != null) {
         session.switchModel(found)
+        Config.saveLastModel(found)
         println("${Colors.LIGHT_YELLOW}Switched to model: ${session.currentModel.shortName}${Colors.RESET}")
     } else {
         println("${Colors.LIGHT_YELLOW}Unknown model: $name. Type /models to see available models.${Colors.RESET}")
     }
 }
 
-private fun printUsage() {
-    println("""
-Usage: cli [options]
-
-Options:
-  -m, --model <model>   Model to use (default: deepseek)
-                         Available: deepseek, qwen
-  -h, --help            Show this help
-    """.trimIndent())
-}

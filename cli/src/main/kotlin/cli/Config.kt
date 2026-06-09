@@ -3,6 +3,17 @@ package cli
 import java.io.File
 
 internal object Config {
+    private val lastModelFile = File(System.getProperty("user.home"), ".config/smartreminder/last_model")
+
+    fun saveLastModel(model: ModelConfig) {
+        lastModelFile.parentFile?.mkdirs()
+        lastModelFile.writeText(model.shortName)
+    }
+
+    fun loadLastModel(): ModelConfig? = try {
+        ModelConfig.fromName(lastModelFile.readText().trim())
+    } catch (_: Exception) { null }
+
     val localProperties: Map<String, String> by lazy {
         val props = mutableMapOf<String, String>()
         val file = listOf("local.properties", "../local.properties")
