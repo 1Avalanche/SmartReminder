@@ -18,7 +18,8 @@ data class ChatResponse(val choices: List<Choice>)
 @Serializable
 data class StructuredResponse(
     val keywords: List<String> = emptyList(),
-    val summary: String = "",
+    val summaryRequest: String = "",
+    val summaryResponse: String = "",
     val content: String = ""
 )
 

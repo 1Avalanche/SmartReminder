@@ -57,10 +57,12 @@ internal class ChatSession {
         if (lastTen.isEmpty()) return emptyList()
 
         val keywords = lastTen.flatMap { it.keywords }.distinct().joinToString(", ")
-        val summaries = lastTen.joinToString("; ") { it.summary }
+        val summaryRequests = lastTen.joinToString("; ") { it.summaryRequest }
+        val summaryResponses = lastTen.joinToString("; ") { it.summaryResponse }
         return listOf(
             Message("assistant", "keywords: $keywords"),
-            Message("assistant", "ранее пользователь спрашивал о: $summaries")
+            Message("assistant", "ранее пользователь спрашивал о: $summaryRequests"),
+            Message("assistant", "ты ответил ранее: $summaryResponses")
         )
     }
 
