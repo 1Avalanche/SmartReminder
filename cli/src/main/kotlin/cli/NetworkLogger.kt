@@ -3,7 +3,9 @@ package cli
 import java.io.File
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
+import kotlinx.serialization.Serializable
 
+@Serializable
 internal data class LogEntry(
     val userInput: String,
     val requestPayload: String,

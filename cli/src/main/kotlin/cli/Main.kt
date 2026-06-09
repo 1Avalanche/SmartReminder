@@ -7,7 +7,7 @@ fun main(args: Array<String>) {
 
     val client = ChatClient(session)
 
-    println("${Colors.BRIGHT_GREEN}ChatAgent готов к работе!${Colors.RESET}")
+    println("${Colors.LIGHT_YELLOW}ChatAgent готов к работе!${Colors.RESET}")
     println("${Colors.DARK_GRAY}Model: ${session.currentModel.shortName}")
     println("Type /help for commands, /exit to quit.${Colors.RESET}\n")
 
@@ -41,19 +41,19 @@ private fun parseArgs(args: Array<String>): ModelConfig? {
 
 private fun runRepl(session: ChatSession, client: ChatClient) {
     while (true) {
-        print("> ")
+        print("${Colors.BRIGHT_WHITE}> ")
         System.out.flush()
         val input = readlnOrNull() ?: break
         if (input.isBlank()) continue
 
         when {
-            input == "/exit" || input == "/quit" -> { println("Goodbye!"); break }
+            input == "/exit" || input == "/quit" -> { println("${Colors.LIGHT_YELLOW}Goodbye!${Colors.RESET}"); break }
             input == "/help" -> { showHelp(); println() }
             input == "/history" || input == "/hist" -> showHistory(session)
-            input == "/clear" -> { session.clear(); println("Chat history cleared.") }
+            input == "/clear" -> { session.clear(); println("${Colors.LIGHT_YELLOW}Chat history cleared.${Colors.RESET}") }
             input == "/models" -> listModels(session)
             input.startsWith("/model ") -> switchModel(session, input.removePrefix("/model ").trim())
-            input.startsWith("/") -> println("Unknown command: $input")
+            input.startsWith("/") -> println("${Colors.LIGHT_YELLOW}Unknown command: $input${Colors.RESET}")
             else -> client.sendMessage(input)
         }
     }
@@ -98,9 +98,9 @@ private fun switchModel(session: ChatSession, name: String) {
     val found = ModelConfig.fromName(name)
     if (found != null) {
         session.switchModel(found)
-        println("Switched to model: ${session.currentModel.shortName}")
+        println("${Colors.LIGHT_YELLOW}Switched to model: ${session.currentModel.shortName}${Colors.RESET}")
     } else {
-        println("Unknown model: $name. Type /models to see available models.")
+        println("${Colors.LIGHT_YELLOW}Unknown model: $name. Type /models to see available models.${Colors.RESET}")
     }
 }
 

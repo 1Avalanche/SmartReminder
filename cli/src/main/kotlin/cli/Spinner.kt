@@ -3,7 +3,7 @@ package cli
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.concurrent.thread
 
-internal class Spinner(private val message: String = "думаю") {
+internal class Spinner(private val message: String = "${Colors.DARK_GRAY}думаю${Colors.RESET}") {
     private val done = AtomicBoolean(false)
     private val frames = listOf("|", "/", "-", "\\")
     private val worker = thread(isDaemon = true) {

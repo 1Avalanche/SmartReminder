@@ -1,5 +1,6 @@
 package cli
 
+import java.io.File
 import kotlinx.serialization.encodeToString
 
 internal class ChatSession {
@@ -8,6 +9,21 @@ internal class ChatSession {
 
     private val messages = mutableListOf(Message("system", SYSTEM_PROMPT))
     private val history = mutableListOf<LogEntry>()
+
+    private val historyFile: File by lazy {
+        val path = listOf("cli/context.json", "context.json")
+            .firstOrNull { File(it).parentFile?.exists() ?: true }
+            ?: "context.json"
+        File(path)
+    }
+
+    init {
+        if (historyFile.exists()) {
+            runCatching {
+                json.decodeFromString<List<LogEntry>>(historyFile.readText())
+            }.getOrNull()?.let { history.addAll(it) }
+        }
+    }
 
     fun switchModel(model: ModelConfig) {
         currentModel = model
@@ -18,6 +34,7 @@ internal class ChatSession {
         messages.add(Message("system", SYSTEM_PROMPT))
         history.clear()
         NetworkLogger.clear()
+        runCatching { historyFile.writeText("[]") }
     }
 
     fun addUserMessage(text: String) {
@@ -26,6 +43,7 @@ internal class ChatSession {
 
     fun addLogEntry(entry: LogEntry) {
         history.add(entry)
+        runCatching { historyFile.writeText(json.encodeToString(history.toList())) }
     }
 
     fun getHistory(): List<LogEntry> = history.toList()
