@@ -326,16 +326,18 @@ private fun sendMessage(text: String) {
     }
 
     val done = AtomicBoolean(false)
-    val dots = listOf(".  ", ".. ", "...", ".. ", ".  ")
+    val frames = listOf("|", "/", "-", "\\")
     val loadingThread = thread(isDaemon = true) {
         var idx = 0
         while (!done.get()) {
-            System.err.print("\r${Colors.LIGHT_GRAY}думаю${dots[idx]}${Colors.RESET}")
-            System.err.flush()
-            idx = (idx + 1) % dots.size
-            Thread.sleep(300)
+            print("\rдумаю ${frames[idx]}")
+            System.out.flush()
+
+            idx = (idx + 1) % frames.size
+            Thread.sleep(100)
         }
     }
+
 
     var requestBody = ""
     try {
@@ -349,10 +351,10 @@ private fun sendMessage(text: String) {
             .build()
 
         val response = client.newCall(request).execute()
-        done.set(true)
-        loadingThread.join(1000)
-        System.err.print("\r\u001B[K")
-        System.err.flush()
+//        done.set(true)
+//        loadingThread.join(1000)
+//        System.err.print("\r\u001B[K")
+//        System.err.flush()
 
         val body = response.body?.string()
         val reqHeaders = buildMap { request.headers.forEach { (name, value) -> put(name, value) } }
@@ -376,7 +378,14 @@ private fun sendMessage(text: String) {
             val (displayText, structured) = parseResponse(reply)
             val responseForLog = structured?.let { json.encodeToString(it) } ?: reply
             logNetworkCall(currentModel.url, reqHeaders, requestBody, response.code, resHeaders, responseForLog)
+
+            done.set(true)
+            loadingThread.join(100)
+            System.err.print("\r\u001B[K")
+            System.err.flush()
+
             println("\n${Colors.LIGHT_VIOLET}${displayText}${Colors.RESET}")
+            println()
             historyLog.add(LogEntry(text, requestBody, responseForLog))
             messages.add(Message("user", text))
         }
