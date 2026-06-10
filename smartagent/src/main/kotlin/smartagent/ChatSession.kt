@@ -1,4 +1,4 @@
-package cli
+package smartagent
 
 import java.io.File
 import kotlinx.serialization.encodeToString
@@ -7,8 +7,16 @@ internal class ChatSession {
     var currentModel: ModelConfig = ModelConfig.DEEPSEEK
         private set
 
-    private val messages = mutableListOf(Message("system", SYSTEM_PROMPT))
+    var currentMode: AgentMode = AgentMode.CHAT
+        private set
+
+    val currentSystemPrompt: String get() = currentMode.systemPrompt
+
+    var repoContext: RepoContext? = null
+
+    private val messages = mutableListOf(Message("system", currentSystemPrompt))
     private val history = mutableListOf<LogEntry>()
+    private val fileContext = mutableListOf<Pair<String, String>>()
 
     private val historyFile: File by lazy {
         val path = listOf("cli/context.json", "context.json")
@@ -29,12 +37,40 @@ internal class ChatSession {
         currentModel = model
     }
 
+    fun switchMode(mode: AgentMode) {
+        currentMode = mode
+        messages.clear()
+        messages.add(Message("system", currentSystemPrompt))
+    }
+
     fun clear() {
         messages.clear()
-        messages.add(Message("system", SYSTEM_PROMPT))
+        messages.add(Message("system", currentSystemPrompt))
         history.clear()
+        fileContext.clear()
         NetworkLogger.clear()
         runCatching { historyFile.writeText("[]") }
+    }
+
+    fun addFileToContext(path: String, content: String) {
+        fileContext.removeIf { it.first == path }
+        fileContext.add(Pair(path, content))
+    }
+
+    fun clearFileContext() = fileContext.clear()
+
+    fun getFileContextPaths(): List<String> = fileContext.map { it.first }
+
+    fun buildFileContextMessages(): List<Message> {
+        if (fileContext.isEmpty()) return emptyList()
+        val sb = StringBuilder("Файлы из репозитория для контекста:\n\n")
+        fileContext.forEach { (path, content) ->
+            sb.appendLine("### $path")
+            sb.appendLine("```")
+            sb.appendLine(content)
+            sb.appendLine("```")
+        }
+        return listOf(Message("user", sb.toString().trimEnd()))
     }
 
     fun addUserMessage(text: String) {

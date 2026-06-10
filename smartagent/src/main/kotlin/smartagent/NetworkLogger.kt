@@ -1,9 +1,11 @@
-package cli
+package smartagent
 
 import java.io.File
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 
 @Serializable
 internal data class LogEntry(
@@ -38,12 +40,12 @@ internal object NetworkLogger {
             sb.appendLine("  $k: ${if (k.equals("Authorization", true)) maskAuth(v) else v}")
         }
         sb.appendLine("--- Request body ---")
-        sb.appendLine(reqBody.replace("{", "\n{").replace("[", "\n[").replace("}", "\n}").replace("]", "\n]"))
+        sb.appendLine(prettyFormat(reqBody))
         sb.appendLine("--- Response: $statusCode ---")
         sb.appendLine("--- Response headers ---")
         resHeaders.forEach { (k, v) -> sb.appendLine("  $k: $v") }
         sb.appendLine("--- Response body ---")
-        sb.appendLine(resBody)
+        sb.appendLine(prettyFormat(resBody))
         sb.appendLine("========================================")
         sb.appendLine()
         logFile.appendText(sb.toString())
@@ -52,5 +54,11 @@ internal object NetworkLogger {
     fun clear() = logFile.writeText("")
 
     private fun maskAuth(header: String) =
-        header.replace(Regex("Bearer sk-[A-Za-z0-9]+"), "Bearer sk-***")
+        header.replace(Regex("Bearer \\S+"), "Bearer ***")
+
+    private fun prettyFormat(s: String): String = try {
+        prettyJson.encodeToString(prettyJson.parseToJsonElement(s))
+    } catch (_: Exception) { s }
 }
+
+private val prettyJson = Json { prettyPrint = true; ignoreUnknownKeys = true }

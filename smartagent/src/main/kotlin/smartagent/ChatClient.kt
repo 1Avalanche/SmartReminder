@@ -1,10 +1,12 @@
-package cli
+package smartagent
 
 import kotlinx.serialization.encodeToString
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import java.time.LocalDateTime
+import java.time.format.DateTimeFormatter
 import java.util.concurrent.TimeUnit
 
 internal class ChatClient(private val session: ChatSession) {
@@ -24,7 +26,10 @@ internal class ChatClient(private val session: ChatSession) {
         val spinner = Spinner()
         var requestBody = ""
         try {
-            val fullMessages = listOf(Message("system", SYSTEM_PROMPT)) + session.buildContext() + Message("user", text)
+            val timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"))
+            val fullMessages = listOf(Message("system", session.currentSystemPrompt)) + session.buildContext() +
+                session.buildFileContextMessages() +
+                Message("assistant", "Current time: $timestamp") + Message("user", text)
             requestBody = json.encodeToString(ChatRequest(session.currentModel.apiModelId, fullMessages))
             val request = buildRequest(requestBody, apiKey)
             val response = http.newCall(request).execute()
@@ -41,7 +46,9 @@ internal class ChatClient(private val session: ChatSession) {
                 return
             }
 
-            val reply = json.decodeFromString<ChatResponse>(body).choices.firstOrNull()?.message?.content ?: ""
+            val chatResponse = json.decodeFromString<ChatResponse>(body)
+            val reply = chatResponse.choices.firstOrNull()?.message?.content ?: ""
+            val usage = chatResponse.usage
 
             if (reply.isBlank()) {
                 spinner.stop()
@@ -50,10 +57,17 @@ internal class ChatClient(private val session: ChatSession) {
                 session.addLogEntry(LogEntry(text, requestBody, body))
             } else {
                 val (displayText, structured) = session.parseResponse(reply)
-                val responseForLog = structured?.let { json.encodeToString(it) } ?: reply
-                NetworkLogger.log(session.currentModel.url, reqHeaders, requestBody, response.code, resHeaders, responseForLog)
+                val enriched = (structured ?: StructuredResponse(content = reply)).copy(
+                    summaryRequest = text,
+                    summaryResponse = displayText
+                )
+                val responseForLog = json.encodeToString(enriched)
+                NetworkLogger.log(session.currentModel.url, reqHeaders, requestBody, response.code, resHeaders, body)
                 spinner.stop()
                 println("\n${Colors.LIGHT_VIOLET}$displayText${Colors.RESET}\n")
+                if (usage != null) {
+                    println(Colors.LIGHT_YELLOW + "tokens → prompt: ${usage.prompt_tokens} | completion: ${usage.completion_tokens} | total: ${usage.total_tokens}" + Colors.RESET)
+                }
                 session.addLogEntry(LogEntry(text, requestBody, responseForLog))
                 session.addUserMessage(text)
             }

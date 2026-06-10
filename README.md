@@ -1,31 +1,124 @@
-This is a Kotlin Multiplatform project targeting Android, iOS.
+# SmartReminder
 
-* [/iosApp](./iosApp/iosApp) contains an iOS application. Even if you’re sharing your UI with Compose Multiplatform,
-  you need this entry point for your iOS app. This is also where you should add SwiftUI code for your project.
+Учебный Kotlin Multiplatform проект. Android и iOS приложение + самостоятельный JVM CLI-чат с LLM.
 
-* [/shared](./shared/src) is for code that will be shared across your Compose Multiplatform applications.
-  It contains several subfolders:
-  - [commonMain](./shared/src/commonMain/kotlin) is for code that’s common for all targets.
-  - Other folders are for Kotlin code that will be compiled for only the platform indicated in the folder name.
-    For example, if you want to use Apple’s CoreCrypto for the iOS part of your Kotlin app,
-    the [iosMain](./shared/src/iosMain/kotlin) folder would be the right place for such calls.
-    Similarly, if you want to edit the Desktop (JVM) specific part, the [jvmMain](./shared/src/jvmMain/kotlin)
-    folder is the appropriate location.
+## Модули
 
-### Running the apps
+| Модуль | Описание |
+|---|---|
+| `:androidApp` | Android-приложение, UI на Compose |
+| `:shared` | Общий Compose Multiplatform код (Android + iOS) |
+| `:cli` | Консольный LLM-чат, работает независимо от мобильных модулей |
 
-Use the run configurations provided by the run widget in your IDE's toolbar. You can also use these commands and options:
+## CLI — установка и запуск
 
-- Android app: `./gradlew :androidApp:assembleDebug`
-- iOS app: open the [/iosApp](./iosApp) directory in Xcode and run it from there.
+### Быстрая установка
 
-### Running tests
+Требует Java 17+.
 
-Use the run button in your IDE's editor gutter, or run tests using Gradle tasks:
+```bash
+bash smartagent/install.sh
+```
 
-- Android tests: `./gradlew :shared:testAndroidHostTest`
-- iOS tests: `./gradlew :shared:iosSimulatorArm64Test`
+Скрипт собирает fat JAR и устанавливает `smartreminder` в `~/.local/bin/`.
+
+Если `~/.local/bin` нет в `PATH`, добавить в `~/.zshrc` или `~/.bashrc`:
+
+```bash
+export PATH="$HOME/.local/bin:$PATH"
+```
+
+### Запуск после установки
+
+```bash
+smartreminder                          # deepseek по умолчанию
+smartreminder --model qwen             # выбрать модель
+smartreminder --repo /path/to/repo     # анализ кода в репозитории
+```
+
+### Удаление
+
+```bash
+bash smartagent/uninstall.sh
+```
+
+### Запуск без установки (из репозитория)
+
+```bash
+./smartagent/run.sh
+./smartagent/run.sh --model qwen
+./smartagent/run.sh --repo /path/to/repo
+```
+
+### API-ключи
+
+Добавить в `local.properties` в корне проекта:
+
+```properties
+DEEPSEEK_STUDY_API_KEY=sk-...
+OPENROUTER_STUDY_API_KEY=sk-...
+```
+
+Или передать через переменные окружения с теми же именами.
+
+### Модели
+
+| Имя | Описание |
+|---|---|
+| `deepseek` | deepseek-v4-pro (по умолчанию) |
+| `qwen` | qwen3-235b-a22b-thinking |
+| `qwen-low` | qwen3-8b, быстрее и дешевле |
+
+### Команды в чате
+
+```
+/help                  — справка
+/models                — список моделей
+/model <name>          — сменить модель
+/repo [path]           — показать или установить репозиторий
+/files [pattern]       — список файлов в репозитории
+/tree [depth]          — дерево файлов (по умолчанию глубина 3)
+/read <file>           — загрузить файл в контекст
+/context               — показать загруженные файлы
+/context clear         — убрать файлы из контекста
+/history               — история запросов
+/clear                 — очистить историю и контекст
+/exit                  — выход
+```
+
+### Анализ кода
+
+```bash
+smartreminder --repo ~/projects/my-app
+```
+
+```
+> /tree
+> /files .kt
+> /read src/main/kotlin/App.kt
+> /read src/main/kotlin/Database.kt
+> объясни как работает авторизация
+```
+
+## Мобильные приложения
+
+### Сборка и запуск
+
+```bash
+# Android debug APK
+./gradlew :androidApp:assembleDebug
+
+# iOS — открыть iosApp/ в Xcode и запустить оттуда
+```
+
+### Тесты
+
+```bash
+./gradlew :shared:testAndroidHostTest      # Android (JVM)
+./gradlew :shared:iosSimulatorArm64Test    # iOS симулятор
+./gradlew :shared:allTests                 # все таргеты
+```
 
 ---
 
-Learn more about [Kotlin Multiplatform](https://www.jetbrains.com/help/kotlin-multiplatform-dev/get-started.html)…
+[Kotlin Multiplatform](https://www.jetbrains.com/help/kotlin-multiplatform-dev/get-started.html)

@@ -1,4 +1,4 @@
-package cli
+package smartagent
 
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -7,13 +7,20 @@ import kotlinx.serialization.json.Json
 data class Message(val role: String, val content: String)
 
 @Serializable
-data class ChatRequest(val model: String, val messages: List<Message>)
+data class ChatRequest(val model: String, val messages: List<Message>, val transforms: List<String> = emptyList())
 
 @Serializable
 data class Choice(val message: Message, val index: Int = 0)
 
 @Serializable
-data class ChatResponse(val choices: List<Choice>)
+data class Usage(
+    val prompt_tokens: Int = 0,
+    val completion_tokens: Int = 0,
+    val total_tokens: Int = 0
+)
+
+@Serializable
+data class ChatResponse(val choices: List<Choice>, val usage: Usage? = null)
 
 @Serializable
 data class StructuredResponse(

@@ -1,4 +1,4 @@
-package cli
+package smartagent
 
 internal object Colors {
     const val RESET = "[0m"

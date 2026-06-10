@@ -19,3 +19,5 @@ captures
 node_modules/
 cli/network.log
 cli/context.json
+smartagent/network.log
+smartagent/context.json

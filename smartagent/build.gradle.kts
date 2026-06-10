@@ -1,0 +1,32 @@
+plugins {
+    alias(libs.plugins.kotlinJvm)
+    alias(libs.plugins.kotlinSerialization)
+    alias(libs.plugins.shadow)
+    application
+}
+
+dependencies {
+    implementation(libs.okhttp)
+    implementation(libs.kotlinx.serialization.json)
+}
+
+kotlin {
+    jvmToolchain(17)
+}
+
+application {
+    mainClass = "smartagent.MainKt"
+}
+
+tasks.shadowJar {
+    archiveBaseName.set("smartagent")
+    archiveClassifier.set("")
+    archiveVersion.set("")
+    manifest {
+        attributes["Main-Class"] = "smartagent.MainKt"
+    }
+}
+
+tasks.named<JavaExec>("run") {
+    standardInput = System.`in`
+}

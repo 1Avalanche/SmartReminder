@@ -1,4 +1,4 @@
-package cli
+package smartagent
 
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.concurrent.thread
