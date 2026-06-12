@@ -7,6 +7,7 @@ fun main(args: Array<String>) {
     val parsedArgs = parseArgs(args)
     val session = ChatSession()
     session.switchModel(parsedArgs.model ?: Config.loadLastModel() ?: ModelConfig.DEEPSEEK)
+    parsedArgs.compressionMode?.let { session.switchCompression(it) }
 
     parsedArgs.repoPath?.let { path ->
         val dir = File(path).canonicalFile
@@ -20,27 +21,39 @@ fun main(args: Array<String>) {
 
     val client = ChatClient(session)
 
-    println("${Colors.LIGHT_YELLOW}ChatAgent готов к работе!${Colors.RESET}")
-    println("${Colors.DARK_GRAY}Model: ${session.currentModel.shortName} | Mode: ${session.currentMode.displayName}")
+    println("${Colors.LIGHT_YELLOW}SmartAgent готов к работе!${Colors.RESET}")
+    println("${Colors.DARK_GRAY}Model: ${session.currentModel.shortName} | Mode: ${session.currentMode.displayName} | Compression: ${session.compressionMode.name.lowercase()}")
     println("Type /help for commands, /exit to quit.${Colors.RESET}\n")
 
     runRepl(session, client)
 }
 
-private data class ParsedArgs(val model: ModelConfig? = null, val repoPath: String? = null)
+private data class ParsedArgs(
+    val model: ModelConfig? = null,
+    val repoPath: String? = null,
+    val compressionMode: CompressionMode? = null
+)
 
 private fun parseArgs(args: Array<String>): ParsedArgs {
     var model: ModelConfig? = null
     var repoPath: String? = null
+    var compressionMode: CompressionMode? = null
     var i = 0
     while (i < args.size) {
         when (args[i]) {
             "--model" -> { model = ModelConfig.fromName(args.getOrElse(++i) { "" }); i++ }
             "--repo" -> { repoPath = args.getOrElse(++i) { "" }; i++ }
+            "--compression" -> {
+                compressionMode = when (args.getOrElse(++i) { "" }.lowercase()) {
+                    "compress" -> CompressionMode.COMPRESS
+                    else -> CompressionMode.NONE
+                }
+                i++
+            }
             else -> i++
         }
     }
-    return ParsedArgs(model, repoPath)
+    return ParsedArgs(model, repoPath, compressionMode)
 }
 
 private fun runRepl(session: ChatSession, client: ChatClient) {
@@ -68,6 +81,9 @@ private fun runRepl(session: ChatSession, client: ChatClient) {
             input == "/context clear" -> { session.clearFileContext(); println("${Colors.LIGHT_YELLOW}File context cleared.${Colors.RESET}") }
             input == "/mode" -> showMode(session)
             input.startsWith("/mode ") -> switchMode(session, input.removePrefix("/mode ").trim())
+            input == "/compression" -> showCompression(session)
+            input.startsWith("/compression ") -> switchCompression(session, input.removePrefix("/compression ").trim())
+            input == "/totalTokens" -> showTotalTokens(session)
             input.startsWith("/analyze ") -> {
                 val (path, prompt) = parseAnalyzeArgs(input.removePrefix("/analyze ").trim())
                 analyzeCode(session, client, path, prompt)
@@ -96,6 +112,9 @@ Commands:
   /context clear         Remove all files from context
   /mode                  Show current mode
   /mode <name>           Switch mode (chat, code-analyzer)
+  /compression           Show current compression mode
+  /compression <mode>    Switch compression mode (none, compress)
+  /totalTokens           Show token usage per request + total sum
   /analyze <path> [prompt]  Collect all text files from path and send for analysis with optional prompt
   <message>              Send a message to the current model
     """.trimIndent() + Colors.RESET)
@@ -288,6 +307,37 @@ private fun switchMode(session: ChatSession, name: String) {
         println("${Colors.LIGHT_YELLOW}Switched to mode: ${found.displayName}${Colors.RESET}")
     } else {
         println("${Colors.LIGHT_YELLOW}Unknown mode: $name. Available: ${AgentMode.entries.joinToString(", ") { it.displayName }}${Colors.RESET}")
+    }
+}
+
+private fun showTotalTokens(session: ChatSession) {
+    val entries = session.getTokenEntries()
+    if (entries.isEmpty()) { println("${Colors.LIGHT_YELLOW}No token data yet.${Colors.RESET}"); return }
+    entries.forEach {
+        println("${Colors.LIGHT_YELLOW}#${it.request}  prompt: ${it.prompt} | completion: ${it.completion} | total: ${it.total}${Colors.RESET}")
+    }
+    val sumTotal = entries.sumOf { it.total }
+    val compression = session.compressionMode.name.lowercase()
+    println("${Colors.LIGHT_YELLOW}─────────────────────────────")
+    println("Total tokens used: $sumTotal | compression: $compression${Colors.RESET}")
+}
+
+private fun showCompression(session: ChatSession) {
+    println("${Colors.LIGHT_YELLOW}Current compression: ${session.compressionMode.name.lowercase()}${Colors.RESET}")
+    println("${Colors.DARK_GRAY}Available: none, compress${Colors.RESET}")
+}
+
+private fun switchCompression(session: ChatSession, name: String) {
+    val mode = when (name.lowercase()) {
+        "compress" -> CompressionMode.COMPRESS
+        "none" -> CompressionMode.NONE
+        else -> null
+    }
+    if (mode != null) {
+        session.switchCompression(mode)
+        println("${Colors.LIGHT_YELLOW}Compression: ${mode.name.lowercase()}${Colors.RESET}")
+    } else {
+        println("${Colors.LIGHT_YELLOW}Unknown: $name. Use: none, compress${Colors.RESET}")
     }
 }
 

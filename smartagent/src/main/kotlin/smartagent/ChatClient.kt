@@ -5,8 +5,6 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
-import java.time.LocalDateTime
-import java.time.format.DateTimeFormatter
 import java.util.concurrent.TimeUnit
 
 internal class ChatClient(private val session: ChatSession) {
@@ -26,10 +24,27 @@ internal class ChatClient(private val session: ChatSession) {
         val spinner = Spinner()
         var requestBody = ""
         try {
-            val timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"))
-            val fullMessages = listOf(Message("system", session.currentSystemPrompt)) + session.buildContext() +
-                session.buildFileContextMessages() +
-                Message("assistant", "Current time: $timestamp") + Message("user", text)
+            val contextContent = session.buildContextContent()
+            val fileContextContent = session.buildFileContextMessages().firstOrNull()?.content ?: ""
+            val userContent = if (fileContextContent.isNotEmpty()) "$fileContextContent\n\n$text" else text
+            val eviction = if (session.compressionMode == CompressionMode.COMPRESS) session.peekEviction() else null
+            val fullMessages = buildList {
+                add(Message("system", session.currentSystemPrompt))
+                if (contextContent.isNotEmpty()) add(Message("assistant", "история диалога\n$contextContent"))
+                if (eviction != null) {
+                    val summarizePrompt = buildString {
+                        appendLine("Суммаризируй этот диалог и верни результат в поле summary:")
+                        if (session.summary.isNotEmpty()) {
+                            appendLine("Текущее summary: ${session.summary}")
+                        }
+                        appendLine("Сообщение, которое выходит за пределы истории:")
+                        appendLine("Вопрос: ${eviction.first}")
+                        append("Ответ: ${eviction.second}")
+                    }
+                    add(Message("assistant", summarizePrompt))
+                }
+                add(Message("user", userContent))
+            }
             requestBody = json.encodeToString(ChatRequest(session.currentModel.apiModelId, fullMessages))
             val request = buildRequest(requestBody, apiKey)
             val response = http.newCall(request).execute()
@@ -67,9 +82,17 @@ internal class ChatClient(private val session: ChatSession) {
                 println("\n${Colors.LIGHT_VIOLET}$displayText${Colors.RESET}\n")
                 if (usage != null) {
                     println(Colors.LIGHT_YELLOW + "tokens → prompt: ${usage.prompt_tokens} | completion: ${usage.completion_tokens} | total: ${usage.total_tokens}" + Colors.RESET)
+                    session.addTokenEntry(usage)
                 }
                 session.addLogEntry(LogEntry(text, requestBody, responseForLog))
-                session.addUserMessage(text)
+                if (session.compressionMode == CompressionMode.COMPRESS) {
+                    if (eviction != null && enriched.summary.isNotBlank()) {
+                        session.updateSummary(enriched.summary)
+                    }
+                    session.addExchange(text, displayText)
+                } else {
+                    session.addUserMessage(text)
+                }
             }
         } catch (e: Exception) {
             spinner.stop()

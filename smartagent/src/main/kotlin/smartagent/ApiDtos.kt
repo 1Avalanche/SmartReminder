@@ -24,10 +24,28 @@ data class ChatResponse(val choices: List<Choice>, val usage: Usage? = null)
 
 @Serializable
 data class StructuredResponse(
-    val keywords: List<String> = emptyList(),
     val summaryRequest: String = "",
     val summaryResponse: String = "",
-    val content: String = ""
+    val content: String = "",
+    val summary: String = ""
+)
+
+@Serializable
+internal data class TokenEntry(
+    val request: Int,
+    val prompt: Int,
+    val completion: Int,
+    val total: Int
+)
+
+enum class CompressionMode { NONE, COMPRESS }
+
+@Serializable
+internal data class ContextFile(
+    val history: List<LogEntry> = emptyList(),
+    val summary: String = "",
+    val compressionMode: CompressionMode = CompressionMode.NONE,
+    val agentMode: AgentMode = AgentMode.CHAT
 )
 
 internal val json = Json { ignoreUnknownKeys = true }
