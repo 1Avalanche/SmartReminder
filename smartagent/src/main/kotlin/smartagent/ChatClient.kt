@@ -27,22 +27,9 @@ internal class ChatClient(private val session: ChatSession) {
             val contextContent = session.buildContextContent()
             val fileContextContent = session.buildFileContextMessages().firstOrNull()?.content ?: ""
             val userContent = if (fileContextContent.isNotEmpty()) "$fileContextContent\n\n$text" else text
-            val eviction = if (session.compressionMode == CompressionMode.COMPRESS) session.peekEviction() else null
             val fullMessages = buildList {
                 add(Message("system", session.currentSystemPrompt))
-                if (contextContent.isNotEmpty()) add(Message("assistant", "история диалога\n$contextContent"))
-                if (eviction != null) {
-                    val summarizePrompt = buildString {
-                        appendLine("Суммаризируй этот диалог и верни результат в поле summary:")
-                        if (session.summary.isNotEmpty()) {
-                            appendLine("Текущее summary: ${session.summary}")
-                        }
-                        appendLine("Сообщение, которое выходит за пределы истории:")
-                        appendLine("Вопрос: ${eviction.first}")
-                        append("Ответ: ${eviction.second}")
-                    }
-                    add(Message("assistant", summarizePrompt))
-                }
+                if (contextContent.isNotEmpty()) add(Message("assistant", contextContent))
                 add(Message("user", userContent))
             }
             requestBody = json.encodeToString(ChatRequest(session.currentModel.apiModelId, fullMessages))
@@ -85,13 +72,11 @@ internal class ChatClient(private val session: ChatSession) {
                     session.addTokenEntry(usage)
                 }
                 session.addLogEntry(LogEntry(text, requestBody, responseForLog))
-                if (session.compressionMode == CompressionMode.COMPRESS) {
-                    if (eviction != null && enriched.summary.isNotBlank()) {
-                        session.updateSummary(enriched.summary)
-                    }
-                    session.addExchange(text, displayText)
-                } else {
-                    session.addUserMessage(text)
+                if (session.contextStrategy == ContextStrategy.STICKY_FACTS && enriched.facts.isNotEmpty()) {
+                    session.updateFacts(enriched.facts)
+                }
+                if (session.contextStrategy == ContextStrategy.BRANCHING && session.activeBranch != null) {
+                    println(Colors.DARK_GRAY + "[Ветка: ${session.activeBranch}]" + Colors.RESET)
                 }
             }
         } catch (e: Exception) {

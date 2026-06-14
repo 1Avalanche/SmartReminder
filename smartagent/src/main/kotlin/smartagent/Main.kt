@@ -7,7 +7,7 @@ fun main(args: Array<String>) {
     val parsedArgs = parseArgs(args)
     val session = ChatSession()
     session.switchModel(parsedArgs.model ?: Config.loadLastModel() ?: ModelConfig.DEEPSEEK)
-    parsedArgs.compressionMode?.let { session.switchCompression(it) }
+    parsedArgs.contextStrategy?.let { session.switchContextStrategy(it) }
 
     parsedArgs.repoPath?.let { path ->
         val dir = File(path).canonicalFile
@@ -22,7 +22,7 @@ fun main(args: Array<String>) {
     val client = ChatClient(session)
 
     println("${Colors.LIGHT_YELLOW}SmartAgent готов к работе!${Colors.RESET}")
-    println("${Colors.DARK_GRAY}Model: ${session.currentModel.shortName} | Mode: ${session.currentMode.displayName} | Compression: ${session.compressionMode.name.lowercase()}")
+    println("${Colors.DARK_GRAY}Model: ${session.currentModel.shortName} | Mode: ${session.currentMode.displayName} | Strategy: ${session.contextStrategy.name.lowercase()}")
     println("Type /help for commands, /exit to quit.${Colors.RESET}\n")
 
     runRepl(session, client)
@@ -31,29 +31,26 @@ fun main(args: Array<String>) {
 private data class ParsedArgs(
     val model: ModelConfig? = null,
     val repoPath: String? = null,
-    val compressionMode: CompressionMode? = null
+    val contextStrategy: ContextStrategy? = null
 )
 
 private fun parseArgs(args: Array<String>): ParsedArgs {
     var model: ModelConfig? = null
     var repoPath: String? = null
-    var compressionMode: CompressionMode? = null
+    var contextStrategy: ContextStrategy? = null
     var i = 0
     while (i < args.size) {
         when (args[i]) {
             "--model" -> { model = ModelConfig.fromName(args.getOrElse(++i) { "" }); i++ }
             "--repo" -> { repoPath = args.getOrElse(++i) { "" }; i++ }
-            "--compression" -> {
-                compressionMode = when (args.getOrElse(++i) { "" }.lowercase()) {
-                    "compress" -> CompressionMode.COMPRESS
-                    else -> CompressionMode.NONE
-                }
+            "--context-strategy" -> {
+                contextStrategy = ContextStrategy.fromName(args.getOrElse(++i) { "" })
                 i++
             }
             else -> i++
         }
     }
-    return ParsedArgs(model, repoPath, compressionMode)
+    return ParsedArgs(model, repoPath, contextStrategy)
 }
 
 private fun runRepl(session: ChatSession, client: ChatClient) {
@@ -81,8 +78,11 @@ private fun runRepl(session: ChatSession, client: ChatClient) {
             input == "/context clear" -> { session.clearFileContext(); println("${Colors.LIGHT_YELLOW}File context cleared.${Colors.RESET}") }
             input == "/mode" -> showMode(session)
             input.startsWith("/mode ") -> switchMode(session, input.removePrefix("/mode ").trim())
-            input == "/compression" -> showCompression(session)
-            input.startsWith("/compression ") -> switchCompression(session, input.removePrefix("/compression ").trim())
+            input == "/context-strategy" -> showContextStrategy(session)
+            input.startsWith("/context-strategy ") -> switchContextStrategy(session, input.removePrefix("/context-strategy ").trim())
+            input == "/facts" -> showFacts(session)
+            input == "/branch" -> showBranch(session)
+            input.startsWith("/branch ") -> handleBranch(session, input.removePrefix("/branch ").trim())
             input == "/totalTokens" -> showTotalTokens(session)
             input.startsWith("/analyze ") -> {
                 val (path, prompt) = parseAnalyzeArgs(input.removePrefix("/analyze ").trim())
@@ -97,31 +97,43 @@ private fun runRepl(session: ChatSession, client: ChatClient) {
 private fun showHelp() {
     println(Colors.LIGHT_YELLOW + """
 Commands:
-  /exit, /quit           Exit the program
-  /help                  Show this help
-  /history, /hist        Show full chat history (JSON)
-  /clear                 Clear chat history and file context
-  /models                List available models
-  /model <name>          Switch model (deepseek, qwen, qwen-low)
-  /repo                  Show current repo path
-  /repo <path>           Set repo path
-  /files [pattern]       List repo files (optional filter)
-  /tree [depth]          Show repo file tree (default depth: 3)
-  /read <file>           Load file into context (relative to repo root)
-  /context               Show files loaded in context
-  /context clear         Remove all files from context
-  /mode                  Show current mode
-  /mode <name>           Switch mode (chat, code-analyzer)
-  /compression           Show current compression mode
-  /compression <mode>    Switch compression mode (none, compress)
-  /totalTokens           Show token usage per request + total sum
-  /analyze <path> [prompt]  Collect all text files from path and send for analysis with optional prompt
-  <message>              Send a message to the current model
+  /exit, /quit                    Exit the program
+  /help                           Show this help
+  /history, /hist                 Show full chat history (JSON)
+  /clear                          Clear chat history and file context
+  /models                         List available models
+  /model <name>                   Switch model (deepseek, qwen, qwen-low)
+  /repo                           Show current repo path
+  /repo <path>                    Set repo path
+  /files [pattern]                List repo files (optional filter)
+  /tree [depth]                   Show repo file tree (default depth: 3)
+  /read <file>                    Load file into context (relative to repo root)
+  /context                        Show files loaded in context
+  /context clear                  Remove all files from context
+  /mode                           Show current mode
+  /mode <name>                    Switch mode (chat, code-analyzer)
+  /context-strategy               Show current context strategy
+  /context-strategy <name>        Switch strategy (sliding-window, sticky-facts, branching)
+  /facts                          Show currently stored facts (sticky-facts mode)
+  /branch                         Show branch status (active branch, available branches)
+  /branch checkpoint <b1> <b2>    Create checkpoint and fork into two named branches
+  /branch switch <name>           Switch to named branch
+  /totalTokens                    Show token usage per request + total sum
+  /analyze <path> [prompt]        Collect all text files from path and send for analysis
+  <message>                       Send a message to the current model
     """.trimIndent() + Colors.RESET)
 }
 
 private fun showHistory(session: ChatSession) {
     val history = session.getHistory()
+    if (session.contextStrategy == ContextStrategy.BRANCHING) {
+        val branch = session.activeBranch
+        if (branch != null) {
+            println("${Colors.DARK_GRAY}[Ветка: $branch]${Colors.RESET}")
+        } else {
+            println("${Colors.DARK_GRAY}[Ствол — ветки не выбраны]${Colors.RESET}")
+        }
+    }
     if (history.isEmpty()) { println("Chat history is empty."); return }
     history.forEachIndexed { i, entry ->
         println("--- Exchange ${i + 1} ---")
@@ -304,9 +316,65 @@ private fun switchMode(session: ChatSession, name: String) {
     val found = AgentMode.fromName(name)
     if (found != null) {
         session.switchMode(found)
-        println("${Colors.LIGHT_YELLOW}Switched to mode: ${found.displayName}${Colors.RESET}")
+        println("${Colors.LIGHT_YELLOW}Switched to mode: ${found.displayName} (история очищена)${Colors.RESET}")
     } else {
         println("${Colors.LIGHT_YELLOW}Unknown mode: $name. Available: ${AgentMode.entries.joinToString(", ") { it.displayName }}${Colors.RESET}")
+    }
+}
+
+private fun showContextStrategy(session: ChatSession) {
+    println("${Colors.LIGHT_YELLOW}Current strategy: ${session.contextStrategy.name.lowercase()}${Colors.RESET}")
+    println("${Colors.DARK_GRAY}Available: sliding-window, sticky-facts, branching${Colors.RESET}")
+}
+
+private fun switchContextStrategy(session: ChatSession, name: String) {
+    val strategy = ContextStrategy.fromName(name)
+    if (strategy != null) {
+        session.switchContextStrategy(strategy)
+        println("${Colors.LIGHT_YELLOW}Strategy: ${strategy.name.lowercase()} (история очищена)${Colors.RESET}")
+    } else {
+        println("${Colors.LIGHT_YELLOW}Unknown strategy: $name. Available: sliding-window, sticky-facts, branching${Colors.RESET}")
+    }
+}
+
+private fun showFacts(session: ChatSession) {
+    val facts = session.getFacts()
+    if (facts.isEmpty()) {
+        println("${Colors.LIGHT_YELLOW}No facts yet. Use sticky-facts strategy and chat to accumulate.${Colors.RESET}")
+        return
+    }
+    println("${Colors.LIGHT_YELLOW}Stored facts:${Colors.RESET}")
+    facts.forEach { println("${Colors.LIGHT_YELLOW}  ${it.name}: ${it.value}${Colors.RESET}") }
+}
+
+private fun showBranch(session: ChatSession) {
+    val names = session.getBranchNames()
+    if (names.isEmpty()) {
+        println("${Colors.LIGHT_YELLOW}No branches. Use /branch checkpoint <b1> <b2> to create.${Colors.RESET}")
+        return
+    }
+    println("${Colors.LIGHT_YELLOW}Active branch: ${session.activeBranch ?: "none"}${Colors.RESET}")
+    println("${Colors.DARK_GRAY}Branches: ${names.joinToString(", ")}${Colors.RESET}")
+}
+
+private fun handleBranch(session: ChatSession, args: String) {
+    val parts = args.trim().split("\\s+".toRegex())
+    when {
+        parts[0] == "checkpoint" && parts.size >= 3 -> {
+            val b1 = parts[1]
+            val b2 = parts[2]
+            session.createCheckpoint(b1, b2)
+            println("${Colors.LIGHT_YELLOW}Checkpoint created. Branches: $b1, $b2. Active: $b1${Colors.RESET}")
+        }
+        parts[0] == "switch" && parts.size >= 2 -> {
+            val name = parts[1]
+            if (session.switchBranch(name)) {
+                println("${Colors.LIGHT_YELLOW}Switched to branch: $name${Colors.RESET}")
+            } else {
+                println("${Colors.LIGHT_YELLOW}Branch not found: $name. Available: ${session.getBranchNames().joinToString(", ")}${Colors.RESET}")
+            }
+        }
+        else -> println("${Colors.LIGHT_YELLOW}Usage: /branch checkpoint <b1> <b2>  |  /branch switch <name>${Colors.RESET}")
     }
 }
 
@@ -317,28 +385,9 @@ private fun showTotalTokens(session: ChatSession) {
         println("${Colors.LIGHT_YELLOW}#${it.request}  prompt: ${it.prompt} | completion: ${it.completion} | total: ${it.total}${Colors.RESET}")
     }
     val sumTotal = entries.sumOf { it.total }
-    val compression = session.compressionMode.name.lowercase()
+    val strategy = session.contextStrategy.name.lowercase()
     println("${Colors.LIGHT_YELLOW}─────────────────────────────")
-    println("Total tokens used: $sumTotal | compression: $compression${Colors.RESET}")
-}
-
-private fun showCompression(session: ChatSession) {
-    println("${Colors.LIGHT_YELLOW}Current compression: ${session.compressionMode.name.lowercase()}${Colors.RESET}")
-    println("${Colors.DARK_GRAY}Available: none, compress${Colors.RESET}")
-}
-
-private fun switchCompression(session: ChatSession, name: String) {
-    val mode = when (name.lowercase()) {
-        "compress" -> CompressionMode.COMPRESS
-        "none" -> CompressionMode.NONE
-        else -> null
-    }
-    if (mode != null) {
-        session.switchCompression(mode)
-        println("${Colors.LIGHT_YELLOW}Compression: ${mode.name.lowercase()}${Colors.RESET}")
-    } else {
-        println("${Colors.LIGHT_YELLOW}Unknown: $name. Use: none, compress${Colors.RESET}")
-    }
+    println("Total tokens used: $sumTotal | strategy: $strategy${Colors.RESET}")
 }
 
 private fun showContext(session: ChatSession) {

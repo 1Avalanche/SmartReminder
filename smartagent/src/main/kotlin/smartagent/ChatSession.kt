@@ -5,8 +5,7 @@ import kotlinx.serialization.encodeToString
 
 internal class ChatSession {
     companion object {
-        const val COMPRESS_AFTER_N_EXCHANGES = 5
-        private const val WINDOW_CAPACITY = COMPRESS_AFTER_N_EXCHANGES - 1
+        const val SLIDING_WINDOW_SIZE = 6
     }
 
     var currentModel: ModelConfig = ModelConfig.DEEPSEEK
@@ -15,20 +14,19 @@ internal class ChatSession {
     var currentMode: AgentMode = AgentMode.CHAT
         private set
 
-    var compressionMode: CompressionMode = CompressionMode.NONE
+    var contextStrategy: ContextStrategy = ContextStrategy.SLIDING_WINDOW
 
-    val currentSystemPrompt: String get() = currentMode.systemPrompt
+    val currentSystemPrompt: String
+        get() = "${currentMode.basePrompt}\n${contextStrategy.formatInstruction}"
 
     var repoContext: RepoContext? = null
 
-    var summary: String = ""
-        private set
-
-    private val conversationWindow = ArrayDeque<Pair<String, String>>()
-
-    private val messages = mutableListOf(Message("system", currentSystemPrompt))
     private val history = mutableListOf<LogEntry>()
     private val fileContext = mutableListOf<Pair<String, String>>()
+    private val facts = mutableListOf<Fact>()
+    private val branches = mutableMapOf<String, MutableList<LogEntry>>()
+    var activeBranch: String? = null
+        private set
 
     private val contextFile: File by lazy {
         val path = listOf("cli/context.json", "context.json")
@@ -49,14 +47,17 @@ internal class ChatSession {
     init {
         if (contextFile.exists()) {
             val text = contextFile.readText()
-            // try new format first, fall back to legacy plain array
             runCatching {
                 json.decodeFromString<ContextFile>(text)
             }.getOrNull()?.let { ctx ->
                 history.addAll(ctx.history)
-                summary = ctx.summary
-                compressionMode = ctx.compressionMode
+                contextStrategy = ctx.contextStrategy
                 currentMode = ctx.agentMode
+                facts.addAll(ctx.facts)
+                ctx.branches.forEach { branch ->
+                    branches[branch.name] = branch.history.toMutableList()
+                }
+                activeBranch = ctx.activeBranch
             } ?: runCatching {
                 json.decodeFromString<List<LogEntry>>(text)
             }.getOrNull()?.let { history.addAll(it) }
@@ -66,13 +67,6 @@ internal class ChatSession {
                 json.decodeFromString<List<TokenEntry>>(tokensFile.readText())
             }.getOrNull()?.let { tokenEntries.addAll(it) }
         }
-        // window reconstructed from last WINDOW_CAPACITY history entries
-        history.takeLast(WINDOW_CAPACITY).forEach { entry ->
-            val assistantText = runCatching {
-                json.decodeFromString<StructuredResponse>(entry.apiResponse).content
-            }.getOrNull()?.takeIf { it.isNotBlank() } ?: entry.apiResponse
-            conversationWindow.addLast(Pair(entry.userInput, assistantText))
-        }
     }
 
     fun switchModel(model: ModelConfig) {
@@ -80,50 +74,50 @@ internal class ChatSession {
     }
 
     fun switchMode(mode: AgentMode) {
+        history.clear()
+        facts.clear()
+        branches.clear()
+        activeBranch = null
         currentMode = mode
-        messages.clear()
-        messages.add(Message("system", currentSystemPrompt))
         saveContext()
     }
 
+    fun switchContextStrategy(strategy: ContextStrategy) {
+        history.clear()
+        facts.clear()
+        branches.clear()
+        activeBranch = null
+        contextStrategy = strategy
+        saveContext()
+    }
+
+    fun createCheckpoint(branch1: String, branch2: String) {
+        branches[branch1] = history.toMutableList()
+        branches[branch2] = history.toMutableList()
+        activeBranch = branch1
+        contextStrategy = ContextStrategy.BRANCHING
+        saveContext()
+    }
+
+    fun switchBranch(name: String): Boolean {
+        if (!branches.containsKey(name)) return false
+        activeBranch = name
+        saveContext()
+        return true
+    }
+
+    fun getBranchNames(): List<String> = branches.keys.toList()
+
     fun clear() {
-        messages.clear()
-        messages.add(Message("system", currentSystemPrompt))
         history.clear()
         fileContext.clear()
-        summary = ""
-        conversationWindow.clear()
+        facts.clear()
+        branches.clear()
+        activeBranch = null
         tokenEntries.clear()
         NetworkLogger.clear()
         saveContext()
         runCatching { tokensFile.writeText("[]") }
-    }
-
-    fun switchCompression(mode: CompressionMode) {
-        compressionMode = mode
-        if (mode == CompressionMode.COMPRESS) {
-            conversationWindow.clear()
-            history.takeLast(WINDOW_CAPACITY).forEach { entry ->
-                val assistantText = runCatching {
-                    json.decodeFromString<StructuredResponse>(entry.apiResponse).content
-                }.getOrNull()?.takeIf { it.isNotBlank() } ?: entry.apiResponse
-                conversationWindow.addLast(Pair(entry.userInput, assistantText))
-            }
-        }
-        saveContext()
-    }
-
-    fun updateSummary(value: String) {
-        summary = value
-        saveContext()
-    }
-
-    fun peekEviction(): Pair<String, String>? =
-        if (conversationWindow.size >= WINDOW_CAPACITY) conversationWindow.first() else null
-
-    fun addExchange(userText: String, assistantText: String) {
-        conversationWindow.addLast(Pair(userText, assistantText))
-        if (conversationWindow.size > WINDOW_CAPACITY) conversationWindow.removeFirst()
     }
 
     fun addFileToContext(path: String, content: String) {
@@ -147,12 +141,16 @@ internal class ChatSession {
         return listOf(Message("user", sb.toString().trimEnd()))
     }
 
-    fun addUserMessage(text: String) {
-        messages.add(Message("user", text))
-    }
-
     fun addLogEntry(entry: LogEntry) {
-        history.add(entry)
+        val branch = activeBranch
+        if (branch != null && contextStrategy == ContextStrategy.BRANCHING) {
+            branches.getOrPut(branch) { mutableListOf() }.add(entry)
+        } else {
+            history.add(entry)
+            if (contextStrategy == ContextStrategy.SLIDING_WINDOW && history.size > SLIDING_WINDOW_SIZE) {
+                history.removeFirst()
+            }
+        }
         saveContext()
     }
 
@@ -167,25 +165,40 @@ internal class ChatSession {
         runCatching { tokensFile.writeText(json.encodeToString(tokenEntries.toList())) }
     }
 
-    fun getTokenEntries(): List<TokenEntry> = tokenEntries.toList()
-
-    fun getHistory(): List<LogEntry> = history.toList()
-
-    fun windowSize(): Int = conversationWindow.size
-
-    fun buildContextContent(): String = when (compressionMode) {
-        CompressionMode.NONE -> buildContextNone()
-        CompressionMode.COMPRESS -> buildContextCompress()
+    fun updateFacts(newFacts: List<Fact>) {
+        facts.clear()
+        facts.addAll(newFacts)
+        saveContext()
     }
 
-    private fun buildContextNone(): String {
-        val lastTen = history.takeLast(10)
+    fun getFacts(): List<Fact> = facts.toList()
+
+    fun getTokenEntries(): List<TokenEntry> = tokenEntries.toList()
+
+    fun getHistory(): List<LogEntry> {
+        val branch = activeBranch
+        return if (branch != null && contextStrategy == ContextStrategy.BRANCHING) {
+            branches[branch]?.toList() ?: emptyList()
+        } else {
+            history.toList()
+        }
+    }
+
+    fun buildContextContent(): String = when (contextStrategy) {
+        ContextStrategy.SLIDING_WINDOW -> buildContextSlidingWindow()
+        ContextStrategy.STICKY_FACTS   -> buildContextStickyFacts()
+        ContextStrategy.BRANCHING      -> buildContextBranching()
+    }
+
+    private fun buildContextSlidingWindow(): String {
+        val lastTen = history.takeLast(SLIDING_WINDOW_SIZE)
             .mapNotNull { entry ->
                 try { json.decodeFromString<StructuredResponse>(entry.apiResponse) }
                 catch (_: Exception) { null }
             }
         if (lastTen.isEmpty()) return ""
         return buildString {
+            appendLine("История сообщений:")
             lastTen.forEach {
                 appendLine("Вопрос: ${it.summaryRequest}")
                 appendLine("Ответ: ${it.summaryResponse}")
@@ -194,16 +207,26 @@ internal class ChatSession {
         }.trimEnd()
     }
 
-    private fun buildContextCompress(): String {
-        if (summary.isEmpty() && conversationWindow.isEmpty()) return ""
+    private fun buildContextStickyFacts(): String {
+        if (facts.isEmpty()) return ""
         return buildString {
-            if (summary.isNotEmpty()) {
-                appendLine("Ранее говорили о: $summary")
-                appendLine()
-            }
-            conversationWindow.forEach { (user, asst) ->
-                appendLine("Вопрос: $user")
-                appendLine("Ответ: $asst")
+            appendLine("Факты:")
+            facts.forEach { appendLine("- ${it.name}: ${it.value}") }
+        }.trimEnd()
+    }
+
+    private fun buildContextBranching(): String {
+        val source = activeBranch?.let { branches[it] } ?: history
+        val entries = source.mapNotNull { entry ->
+            try { json.decodeFromString<StructuredResponse>(entry.apiResponse) }
+            catch (_: Exception) { null }
+        }
+        if (entries.isEmpty()) return ""
+        return buildString {
+            appendLine("История сообщений:")
+            entries.forEach {
+                appendLine("Вопрос: ${it.summaryRequest}")
+                appendLine("Ответ: ${it.summaryResponse}")
                 appendLine()
             }
         }.trimEnd()
@@ -221,7 +244,19 @@ internal class ChatSession {
 
     private fun saveContext() {
         runCatching {
-            contextFile.writeText(json.encodeToString(ContextFile(history.toList(), summary, compressionMode, currentMode)))
+            val branchList = branches.map { (name, hist) -> Branch(name, hist.toList()) }
+            contextFile.writeText(
+                json.encodeToString(
+                    ContextFile(
+                        history = history.toList(),
+                        contextStrategy = contextStrategy,
+                        agentMode = currentMode,
+                        facts = facts.toList(),
+                        branches = branchList,
+                        activeBranch = activeBranch
+                    )
+                )
+            )
         }
     }
 }

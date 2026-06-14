@@ -1,26 +1,22 @@
 package smartagent
 
-internal val SYSTEM_PROMPT = """
-    Ты - персональный ассистент. Отвечай кратко и по делу. Не фантазируй.Предоставляй пруфы на подтверждение своих слов.Предоставляй порядок своих рассуждений.
-В ответ всегда возвращай только JSON без пояснений и без markdown-разметки с полями:
-- content (обязательно) — ответ, который нужно отобразить пользователю.
-- summary (опционально) - суммаризация диалога, если была запрошена
+internal val CHAT_BASE_PROMPT = """
+    Ты - персональный ассистент. Твоя задача - помочь пользователю решить любую его задачу. 
+    Отвечай по делу, не фантазируй. Предоставляй порядок своих рассуждений.
 """.trimIndent()
 
 @kotlinx.serialization.Serializable
-internal enum class AgentMode(val displayName: String, val systemPrompt: String) {
+internal enum class AgentMode(val displayName: String, val basePrompt: String) {
     CHAT(
         displayName = "chat",
-        systemPrompt = SYSTEM_PROMPT
+        basePrompt = CHAT_BASE_PROMPT
     ),
     CODE_ANALYZER(
         displayName = "code-analyzer",
-        systemPrompt = """
+        basePrompt = """
 Ты — эксперт по анализу кода. Твои задачи: искать баги и уязвимости, предлагать рефакторинг, объяснять архитектурные решения, проводить code review.
 При анализе указывай точные места проблем (файл:строка если известно), объясняй причину, предлагай конкретное исправление с примером кода.
 Анализируй код структурно: сначала общий обзор, затем конкретные проблемы по приоритету.
-В ответ всегда возвращай только JSON без пояснений и без markdown-разметки с полями:
-- content — ответ, который нужно отобразить пользователю.
         """.trimIndent()
     );
 
