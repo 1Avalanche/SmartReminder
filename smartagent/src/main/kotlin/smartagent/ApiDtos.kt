@@ -46,7 +46,8 @@ internal val CONTEXT_FORMAT_INSTRUCTION = """
 internal data class ContextFile(
     val history: List<LogEntry> = emptyList(),
     val summary: String = "",
-    val agentMode: AgentMode = AgentMode.CHAT
+    val agentMode: AgentMode = AgentMode.CHAT,
+    val lastPromptTokens: Int = 0
 )
 
 @Serializable

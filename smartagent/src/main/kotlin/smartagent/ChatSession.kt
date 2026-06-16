@@ -3,6 +3,7 @@ package smartagent
 import java.io.File
 import kotlinx.serialization.encodeToString
 
+private const val CONTEXT_PERCENT = 0.04
 internal class ChatSession {
     var currentModel: ModelConfig = ModelConfig.DEEPSEEK
         private set
@@ -14,6 +15,12 @@ internal class ChatSession {
         get() = "${currentMode.basePrompt}\n${CONTEXT_FORMAT_INSTRUCTION}"
 
     var repoContext: RepoContext? = null
+
+    var summary: String = ""
+        private set
+
+    var lastPromptTokens: Int = 0
+        private set
 
     private val history = mutableListOf<LogEntry>()
     private val fileContext = mutableListOf<Pair<String, String>>()
@@ -42,6 +49,8 @@ internal class ChatSession {
             }.getOrNull()?.let { ctx ->
                 history.addAll(ctx.history)
                 currentMode = ctx.agentMode
+                summary = ctx.summary
+                lastPromptTokens = ctx.lastPromptTokens
             } ?: runCatching {
                 json.decodeFromString<List<LogEntry>>(text)
             }.getOrNull()?.let { history.addAll(it) }
@@ -67,6 +76,8 @@ internal class ChatSession {
         history.clear()
         fileContext.clear()
         tokenEntries.clear()
+        summary = ""
+        lastPromptTokens = 0
         NetworkLogger.clear()
         saveContext()
         runCatching { tokensFile.writeText("[]") }
@@ -113,19 +124,50 @@ internal class ChatSession {
 
     fun getHistory(): List<LogEntry> = history.toList()
 
+    fun updateLastPromptTokens(tokens: Int) {
+        lastPromptTokens = tokens
+        saveContext()
+    }
+
+    fun shouldCompress(estimatedChars: Int = 0): Boolean {
+        val threshold = (currentModel.contextWindow * CONTEXT_PERCENT).toInt()
+        val effectiveTokens = maxOf(lastPromptTokens, estimatedChars / 4)
+        return effectiveTokens >= threshold
+    }
+
+    fun getMessagesToSummarize(): List<LogEntry> {
+        val keepCount = 3
+        return if (history.size > keepCount) history.dropLast(keepCount) else emptyList()
+    }
+
+    fun applySummary(newSummary: String, summarizedCount: Int) {
+        summary = newSummary
+        repeat(summarizedCount) { if (history.isNotEmpty()) history.removeAt(0) }
+        saveContext()
+    }
+
     fun buildContextContent(): String {
-        if (history.isEmpty()) return ""
+        val hasSummary = summary.isNotBlank()
+        val hasHistory = history.isNotEmpty()
+        if (!hasSummary && !hasHistory) return ""
         return buildString {
-            appendLine("История сообщений:")
-            history.forEach { entry ->
-                val content = try {
-                    json.decodeFromString<StructuredResponse>(entry.apiResponse).content
-                } catch (_: Exception) {
-                    entry.apiResponse
+            if (hasSummary) {
+                appendLine("Сводка предыдущего разговора:")
+                appendLine(summary)
+                if (hasHistory) appendLine()
+            }
+            if (hasHistory) {
+                appendLine("История сообщений:")
+                history.forEach { entry ->
+                    val content = try {
+                        json.decodeFromString<StructuredResponse>(entry.apiResponse).content
+                    } catch (_: Exception) {
+                        entry.apiResponse
+                    }
+                    appendLine("Вопрос: ${entry.userInput}")
+                    appendLine("Ответ: $content")
+                    appendLine()
                 }
-                appendLine("Вопрос: ${entry.userInput}")
-                appendLine("Ответ: $content")
-                appendLine()
             }
         }.trimEnd()
     }
@@ -146,7 +188,9 @@ internal class ChatSession {
                 prettyJson.encodeToString(
                     ContextFile(
                         history = history.toList(),
-                        agentMode = currentMode
+                        summary = summary,
+                        agentMode = currentMode,
+                        lastPromptTokens = lastPromptTokens
                     )
                 )
             )

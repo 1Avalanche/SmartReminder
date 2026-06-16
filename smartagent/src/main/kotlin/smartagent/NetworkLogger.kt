@@ -10,7 +10,8 @@ import kotlinx.serialization.encodeToString
 internal data class LogEntry(
     val userInput: String,
     val requestPayload: String,
-    val apiResponse: String
+    val apiResponse: String,
+    val id: String = java.util.UUID.randomUUID().toString()
 )
 
 internal object NetworkLogger {
@@ -29,9 +30,11 @@ internal object NetworkLogger {
         reqBody: String,
         statusCode: Int,
         resHeaders: Map<String, String>,
-        resBody: String
+        resBody: String,
+        source: String = "[MAIN_AGENT]"
     ) {
         val sb = StringBuilder()
+        sb.appendLine(source)
         sb.appendLine("=== ${LocalDateTime.now().format(timestampFormatter)} ===")
         sb.appendLine("URL: $url")
         sb.appendLine("--- Request headers ---")

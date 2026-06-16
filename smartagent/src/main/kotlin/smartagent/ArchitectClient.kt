@@ -45,7 +45,7 @@ internal class ArchitectClient(
 
             if (!response.isSuccessful) {
                 spinner.stop()
-                NetworkLogger.log(session.currentModel.url, reqHeaders, requestBody, response.code, resHeaders, body)
+                NetworkLogger.log(session.currentModel.url, reqHeaders, requestBody, response.code, resHeaders, body, "[MAIN_AGENT]")
                 println("Error ${response.code}: ${body.ifEmpty { "Unknown error" }}")
                 return
             }
@@ -54,7 +54,7 @@ internal class ArchitectClient(
             val reply = chatResponse.choices.firstOrNull()?.message?.content ?: ""
             val usage = chatResponse.usage
 
-            NetworkLogger.log(session.currentModel.url, reqHeaders, requestBody, response.code, resHeaders, body)
+            NetworkLogger.log(session.currentModel.url, reqHeaders, requestBody, response.code, resHeaders, body, "[MAIN_AGENT]")
             spinner.stop()
 
             if (reply.isBlank()) {
@@ -67,8 +67,10 @@ internal class ArchitectClient(
             println("${Colors.LIGHT_VIOLET}${architectResponse.content}${Colors.RESET}\n")
 
             if (usage != null) {
-                println(Colors.LIGHT_YELLOW + "tokens → prompt: ${usage.prompt_tokens} | completion: ${usage.completion_tokens} | total: ${usage.total_tokens}" + Colors.RESET)
+                val pct = usage.prompt_tokens * 100 / session.currentModel.contextWindow
+                println(Colors.LIGHT_YELLOW + "tokens → prompt: ${usage.prompt_tokens} | completion: ${usage.completion_tokens} | total: ${usage.total_tokens} | context: $pct%" + Colors.RESET)
                 session.addTokenEntry(usage)
+                session.updateLastPromptTokens(usage.prompt_tokens)
             }
 
             session.addLogEntry(LogEntry(userInput, requestBody, json.encodeToString(architectResponse)))
