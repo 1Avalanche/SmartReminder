@@ -18,6 +18,11 @@ internal enum class AgentMode(val displayName: String, val basePrompt: String) {
 При анализе указывай точные места проблем (файл:строка если известно), объясняй причину, предлагай конкретное исправление с примером кода.
 Анализируй код структурно: сначала общий обзор, затем конкретные проблемы по приоритету.
         """.trimIndent()
+    ),
+    ARCHITECT(
+        displayName = "architect",
+        // TODO: load system prompt from prompts/architect/system.md at runtime
+        basePrompt = "Ты — архитектор программного обеспечения. Помогаешь проектировать системы и принимать архитектурные решения."
     );
 
     companion object {

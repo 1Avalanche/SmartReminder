@@ -14,19 +14,13 @@ internal class ChatSession {
     var currentMode: AgentMode = AgentMode.CHAT
         private set
 
-    var contextStrategy: ContextStrategy = ContextStrategy.SLIDING_WINDOW
-
     val currentSystemPrompt: String
-        get() = "${currentMode.basePrompt}\n${contextStrategy.formatInstruction}"
+        get() = "${currentMode.basePrompt}\n${CONTEXT_FORMAT_INSTRUCTION}"
 
     var repoContext: RepoContext? = null
 
     private val history = mutableListOf<LogEntry>()
     private val fileContext = mutableListOf<Pair<String, String>>()
-    private val facts = mutableListOf<Fact>()
-    private val branches = mutableMapOf<String, MutableList<LogEntry>>()
-    var activeBranch: String? = null
-        private set
 
     private val contextFile: File by lazy {
         val path = listOf("cli/context.json", "context.json")
@@ -51,13 +45,7 @@ internal class ChatSession {
                 json.decodeFromString<ContextFile>(text)
             }.getOrNull()?.let { ctx ->
                 history.addAll(ctx.history)
-                contextStrategy = ctx.contextStrategy
                 currentMode = ctx.agentMode
-                facts.addAll(ctx.facts)
-                ctx.branches.forEach { branch ->
-                    branches[branch.name] = branch.history.toMutableList()
-                }
-                activeBranch = ctx.activeBranch
             } ?: runCatching {
                 json.decodeFromString<List<LogEntry>>(text)
             }.getOrNull()?.let { history.addAll(it) }
@@ -75,45 +63,13 @@ internal class ChatSession {
 
     fun switchMode(mode: AgentMode) {
         history.clear()
-        facts.clear()
-        branches.clear()
-        activeBranch = null
         currentMode = mode
         saveContext()
     }
 
-    fun switchContextStrategy(strategy: ContextStrategy) {
-        history.clear()
-        facts.clear()
-        branches.clear()
-        activeBranch = null
-        contextStrategy = strategy
-        saveContext()
-    }
-
-    fun createCheckpoint(branch1: String, branch2: String) {
-        branches[branch1] = history.toMutableList()
-        branches[branch2] = history.toMutableList()
-        activeBranch = branch1
-        contextStrategy = ContextStrategy.BRANCHING
-        saveContext()
-    }
-
-    fun switchBranch(name: String): Boolean {
-        if (!branches.containsKey(name)) return false
-        activeBranch = name
-        saveContext()
-        return true
-    }
-
-    fun getBranchNames(): List<String> = branches.keys.toList()
-
     fun clear() {
         history.clear()
         fileContext.clear()
-        facts.clear()
-        branches.clear()
-        activeBranch = null
         tokenEntries.clear()
         NetworkLogger.clear()
         saveContext()
@@ -142,14 +98,9 @@ internal class ChatSession {
     }
 
     fun addLogEntry(entry: LogEntry) {
-        val branch = activeBranch
-        if (branch != null && contextStrategy == ContextStrategy.BRANCHING) {
-            branches.getOrPut(branch) { mutableListOf() }.add(entry)
-        } else {
-            history.add(entry)
-            if (contextStrategy == ContextStrategy.SLIDING_WINDOW && history.size > SLIDING_WINDOW_SIZE) {
-                history.removeFirst()
-            }
+        history.add(entry)
+        if (history.size > SLIDING_WINDOW_SIZE) {
+            history.removeFirst()
         }
         saveContext()
     }
@@ -165,30 +116,11 @@ internal class ChatSession {
         runCatching { tokensFile.writeText(json.encodeToString(tokenEntries.toList())) }
     }
 
-    fun updateFacts(newFacts: List<Fact>) {
-        facts.clear()
-        facts.addAll(newFacts)
-        saveContext()
-    }
-
-    fun getFacts(): List<Fact> = facts.toList()
-
     fun getTokenEntries(): List<TokenEntry> = tokenEntries.toList()
 
-    fun getHistory(): List<LogEntry> {
-        val branch = activeBranch
-        return if (branch != null && contextStrategy == ContextStrategy.BRANCHING) {
-            branches[branch]?.toList() ?: emptyList()
-        } else {
-            history.toList()
-        }
-    }
+    fun getHistory(): List<LogEntry> = history.toList()
 
-    fun buildContextContent(): String = when (contextStrategy) {
-        ContextStrategy.SLIDING_WINDOW -> buildContextSlidingWindow()
-        ContextStrategy.STICKY_FACTS   -> buildContextStickyFacts()
-        ContextStrategy.BRANCHING      -> buildContextBranching()
-    }
+    fun buildContextContent(): String = buildContextSlidingWindow()
 
     private fun buildContextSlidingWindow(): String {
         val lastTen = history.takeLast(SLIDING_WINDOW_SIZE)
@@ -200,31 +132,6 @@ internal class ChatSession {
         return buildString {
             appendLine("История сообщений:")
             lastTen.forEach {
-                appendLine("Вопрос: ${it.summaryRequest}")
-                appendLine("Ответ: ${it.summaryResponse}")
-                appendLine()
-            }
-        }.trimEnd()
-    }
-
-    private fun buildContextStickyFacts(): String {
-        if (facts.isEmpty()) return ""
-        return buildString {
-            appendLine("Факты:")
-            facts.forEach { appendLine("- ${it.name}: ${it.value}") }
-        }.trimEnd()
-    }
-
-    private fun buildContextBranching(): String {
-        val source = activeBranch?.let { branches[it] } ?: history
-        val entries = source.mapNotNull { entry ->
-            try { json.decodeFromString<StructuredResponse>(entry.apiResponse) }
-            catch (_: Exception) { null }
-        }
-        if (entries.isEmpty()) return ""
-        return buildString {
-            appendLine("История сообщений:")
-            entries.forEach {
                 appendLine("Вопрос: ${it.summaryRequest}")
                 appendLine("Ответ: ${it.summaryResponse}")
                 appendLine()
@@ -244,16 +151,11 @@ internal class ChatSession {
 
     private fun saveContext() {
         runCatching {
-            val branchList = branches.map { (name, hist) -> Branch(name, hist.toList()) }
             contextFile.writeText(
-                json.encodeToString(
+                prettyJson.encodeToString(
                     ContextFile(
                         history = history.toList(),
-                        contextStrategy = contextStrategy,
-                        agentMode = currentMode,
-                        facts = facts.toList(),
-                        branches = branchList,
-                        activeBranch = activeBranch
+                        agentMode = currentMode
                     )
                 )
             )

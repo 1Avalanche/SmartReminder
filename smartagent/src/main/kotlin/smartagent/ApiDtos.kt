@@ -1,5 +1,7 @@
 package smartagent
 
+import java.time.LocalDateTime
+import java.time.format.DateTimeFormatter
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 
@@ -23,14 +25,10 @@ data class Usage(
 data class ChatResponse(val choices: List<Choice>, val usage: Usage? = null)
 
 @Serializable
-data class Fact(val name: String, val value: String)
-
-@Serializable
 data class StructuredResponse(
     val summaryRequest: String = "",
     val summaryResponse: String = "",
-    val content: String = "",
-    val facts: List<Fact> = emptyList()
+    val content: String = ""
 )
 
 @Serializable
@@ -41,47 +39,29 @@ internal data class TokenEntry(
     val total: Int
 )
 
-@Serializable
-enum class ContextStrategy(val formatInstruction: String) {
-    SLIDING_WINDOW(
-        """
+internal val CONTEXT_FORMAT_INSTRUCTION = """
 В ответ всегда возвращай только JSON без пояснений и без markdown-разметки с полями:
 - content (обязательно) — ответ, который нужно отобразить пользователю.
-        """.trimIndent()
-    ),
-    STICKY_FACTS(
-        """
-В ответ всегда возвращай только JSON без пояснений и без markdown-разметки с полями:
-- content (обязательно) — ответ, который нужно отобразить пользователю.
-- facts (обязательно) — массив объектов {"name": "...", "value": "..."} с краткими фактами диалога (цели, ограничения, предпочтения и т.д.). Обновляй факты при каждом ответе.
-        """.trimIndent()
-    ),
-    BRANCHING(
-        """
-В ответ всегда возвращай только JSON без пояснений и без markdown-разметки с полями:
-- content (обязательно) — ответ, который нужно отобразить пользователю.
-        """.trimIndent()
-    );  // TODO: branching strategy
-
-    companion object {
-        fun fromName(name: String): ContextStrategy? = entries.find {
-            it.name.equals(name.replace("-", "_"), ignoreCase = true)
-        }
-    }
-}
-
-@Serializable
-internal data class Branch(val name: String, val history: List<LogEntry>)
+""".trimIndent()
 
 @Serializable
 internal data class ContextFile(
     val history: List<LogEntry> = emptyList(),
     val summary: String = "",
-    val contextStrategy: ContextStrategy = ContextStrategy.SLIDING_WINDOW,
-    val agentMode: AgentMode = AgentMode.CHAT,
-    val facts: List<Fact> = emptyList(),
-    val branches: List<Branch> = emptyList(),
-    val activeBranch: String? = null
+    val agentMode: AgentMode = AgentMode.CHAT
 )
 
+@Serializable
+internal data class ArchitectResponse(
+    val content: String = "",
+    val currentTask: String? = null,
+    val decision: String? = null
+)
+
+internal fun timestampMessage(): Message {
+    val ts = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"))
+    return Message("assistant", "Текущая дата и время: $ts")
+}
+
 internal val json = Json { ignoreUnknownKeys = true }
+internal val prettyJson = Json { prettyPrint = true; ignoreUnknownKeys = true }

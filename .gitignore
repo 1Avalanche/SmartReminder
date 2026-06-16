@@ -17,7 +17,7 @@ captures
 !*.xcworkspace/contents.xcworkspacedata
 **/xcshareddata/WorkspaceSettings.xcsettings
 node_modules/
-cli/network.log
-cli/context.json
 smartagent/network.log
 smartagent/context.json
+smartagent/long_memory.md
+smartagent/work_memory.json

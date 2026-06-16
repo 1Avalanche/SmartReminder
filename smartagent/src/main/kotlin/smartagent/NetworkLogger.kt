@@ -5,7 +5,6 @@ import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
-import kotlinx.serialization.json.Json
 
 @Serializable
 internal data class LogEntry(
@@ -61,4 +60,3 @@ internal object NetworkLogger {
     } catch (_: Exception) { s }
 }
 
-private val prettyJson = Json { prettyPrint = true; ignoreUnknownKeys = true }

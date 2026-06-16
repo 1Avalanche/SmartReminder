@@ -7,7 +7,6 @@ fun main(args: Array<String>) {
     val parsedArgs = parseArgs(args)
     val session = ChatSession()
     session.switchModel(parsedArgs.model ?: Config.loadLastModel() ?: ModelConfig.DEEPSEEK)
-    parsedArgs.contextStrategy?.let { session.switchContextStrategy(it) }
 
     parsedArgs.repoPath?.let { path ->
         val dir = File(path).canonicalFile
@@ -20,40 +19,42 @@ fun main(args: Array<String>) {
     }
 
     val client = ChatClient(session)
+    val architectOnboarding = ArchitectOnboarding()
+    val architectClient = ArchitectClient(session, architectOnboarding)
 
-    println("${Colors.LIGHT_YELLOW}SmartAgent готов к работе!${Colors.RESET}")
-    println("${Colors.DARK_GRAY}Model: ${session.currentModel.shortName} | Mode: ${session.currentMode.displayName} | Strategy: ${session.contextStrategy.name.lowercase()}")
-    println("Type /help for commands, /exit to quit.${Colors.RESET}\n")
+    if (session.currentMode == AgentMode.ARCHITECT) {
+        println("${Colors.DARK_GRAY}Model: ${session.currentModel.shortName} | Mode: ${session.currentMode.displayName}")
+        println("Type /help for commands, /exit to quit.${Colors.RESET}\n")
+        architectOnboarding.startSession()
+    } else {
+        println("${Colors.LIGHT_YELLOW}SmartAgent готов к работе!${Colors.RESET}")
+        println("${Colors.DARK_GRAY}Model: ${session.currentModel.shortName} | Mode: ${session.currentMode.displayName}")
+        println("Type /help for commands, /exit to quit.${Colors.RESET}\n")
+    }
 
-    runRepl(session, client)
+    runRepl(session, client, architectOnboarding, architectClient)
 }
 
 private data class ParsedArgs(
     val model: ModelConfig? = null,
-    val repoPath: String? = null,
-    val contextStrategy: ContextStrategy? = null
+    val repoPath: String? = null
 )
 
 private fun parseArgs(args: Array<String>): ParsedArgs {
     var model: ModelConfig? = null
     var repoPath: String? = null
-    var contextStrategy: ContextStrategy? = null
     var i = 0
     while (i < args.size) {
         when (args[i]) {
             "--model" -> { model = ModelConfig.fromName(args.getOrElse(++i) { "" }); i++ }
             "--repo" -> { repoPath = args.getOrElse(++i) { "" }; i++ }
-            "--context-strategy" -> {
-                contextStrategy = ContextStrategy.fromName(args.getOrElse(++i) { "" })
-                i++
-            }
             else -> i++
         }
     }
-    return ParsedArgs(model, repoPath, contextStrategy)
+    return ParsedArgs(model, repoPath)
 }
 
-private fun runRepl(session: ChatSession, client: ChatClient) {
+private fun runRepl(session: ChatSession, client: ChatClient, architectOnboarding: ArchitectOnboarding, architectClient: ArchitectClient) {
     while (true) {
         print("${Colors.BRIGHT_WHITE}> ")
         System.out.flush()
@@ -64,7 +65,27 @@ private fun runRepl(session: ChatSession, client: ChatClient) {
             input == "/exit" || input == "/quit" -> { println("${Colors.LIGHT_YELLOW}Goodbye!${Colors.RESET}"); break }
             input == "/help" -> { showHelp(); println() }
             input == "/history" || input == "/hist" -> showHistory(session)
-            input == "/clear" -> { session.clear(); println("${Colors.LIGHT_YELLOW}Chat history cleared.${Colors.RESET}") }
+            input == "/clear" || input == "/new" -> {
+                if (session.currentMode == AgentMode.ARCHITECT) {
+                    session.clear()
+                    architectOnboarding.printHelloSecond()
+                } else {
+                    session.clear()
+                    println("${Colors.LIGHT_YELLOW}Chat history cleared.${Colors.RESET}")
+                }
+            }
+            input == "/clearAll" -> {
+                print("${Colors.LIGHT_YELLOW}Очистить все данные проекта (все решении и знания буду утеряны)? [y/N]: ${Colors.RESET}")
+                System.out.flush()
+                val confirm = readlnOrNull()?.trim()?.lowercase()
+                if (confirm == "y" || confirm == "yes") {
+                    architectOnboarding.clearAll()
+                    session.clear()
+                    println("${Colors.LIGHT_YELLOW}Все данные проекта очищены.${Colors.RESET}")
+                } else {
+                    println("${Colors.DARK_GRAY}Отменено.${Colors.RESET}")
+                }
+            }
             input == "/models" -> listModels(session)
             input.startsWith("/model ") -> switchModel(session, input.removePrefix("/model ").trim())
             input == "/repo" -> showRepo(session)
@@ -77,19 +98,29 @@ private fun runRepl(session: ChatSession, client: ChatClient) {
             input == "/context" -> showContext(session)
             input == "/context clear" -> { session.clearFileContext(); println("${Colors.LIGHT_YELLOW}File context cleared.${Colors.RESET}") }
             input == "/mode" -> showMode(session)
-            input.startsWith("/mode ") -> switchMode(session, input.removePrefix("/mode ").trim())
-            input == "/context-strategy" -> showContextStrategy(session)
-            input.startsWith("/context-strategy ") -> switchContextStrategy(session, input.removePrefix("/context-strategy ").trim())
-            input == "/facts" -> showFacts(session)
-            input == "/branch" -> showBranch(session)
-            input.startsWith("/branch ") -> handleBranch(session, input.removePrefix("/branch ").trim())
+            input.startsWith("/mode ") -> {
+                val modeName = input.removePrefix("/mode ").trim()
+                switchMode(session, modeName)
+                if (session.currentMode == AgentMode.ARCHITECT) {
+                    architectOnboarding.startSession()
+                }
+            }
             input == "/totalTokens" -> showTotalTokens(session)
+            input == "/memory" -> showMemory(architectOnboarding)
             input.startsWith("/analyze ") -> {
                 val (path, prompt) = parseAnalyzeArgs(input.removePrefix("/analyze ").trim())
                 analyzeCode(session, client, path, prompt)
             }
             input.startsWith("/") -> println("${Colors.LIGHT_YELLOW}Unknown command: $input${Colors.RESET}")
-            else -> client.sendMessage(input)
+            else -> {
+                when {
+                    session.currentMode == AgentMode.ARCHITECT && architectOnboarding.isWaitingForAnswer ->
+                        architectOnboarding.handleAnswer(input)
+                    session.currentMode == AgentMode.ARCHITECT ->
+                        architectClient.sendMessage(input)
+                    else -> client.sendMessage(input)
+                }
+            }
         }
     }
 }
@@ -100,7 +131,8 @@ Commands:
   /exit, /quit                    Exit the program
   /help                           Show this help
   /history, /hist                 Show full chat history (JSON)
-  /clear                          Clear chat history and file context
+  /clear, /new                    Clear chat history and file context
+  /clearAll                       Clear all project data (long_memory.md + onboarding.json)
   /models                         List available models
   /model <name>                   Switch model (deepseek, qwen, qwen-low)
   /repo                           Show current repo path
@@ -111,13 +143,8 @@ Commands:
   /context                        Show files loaded in context
   /context clear                  Remove all files from context
   /mode                           Show current mode
-  /mode <name>                    Switch mode (chat, code-analyzer)
-  /context-strategy               Show current context strategy
-  /context-strategy <name>        Switch strategy (sliding-window, sticky-facts, branching)
-  /facts                          Show currently stored facts (sticky-facts mode)
-  /branch                         Show branch status (active branch, available branches)
-  /branch checkpoint <b1> <b2>    Create checkpoint and fork into two named branches
-  /branch switch <name>           Switch to named branch
+  /mode <name>                    Switch mode (chat, code-analyzer, architect)
+  /memory                         Show contents of long_memory.md and work_memory.json
   /totalTokens                    Show token usage per request + total sum
   /analyze <path> [prompt]        Collect all text files from path and send for analysis
   <message>                       Send a message to the current model
@@ -126,14 +153,6 @@ Commands:
 
 private fun showHistory(session: ChatSession) {
     val history = session.getHistory()
-    if (session.contextStrategy == ContextStrategy.BRANCHING) {
-        val branch = session.activeBranch
-        if (branch != null) {
-            println("${Colors.DARK_GRAY}[Ветка: $branch]${Colors.RESET}")
-        } else {
-            println("${Colors.DARK_GRAY}[Ствол — ветки не выбраны]${Colors.RESET}")
-        }
-    }
     if (history.isEmpty()) { println("Chat history is empty."); return }
     history.forEachIndexed { i, entry ->
         println("--- Exchange ${i + 1} ---")
@@ -322,62 +341,6 @@ private fun switchMode(session: ChatSession, name: String) {
     }
 }
 
-private fun showContextStrategy(session: ChatSession) {
-    println("${Colors.LIGHT_YELLOW}Current strategy: ${session.contextStrategy.name.lowercase()}${Colors.RESET}")
-    println("${Colors.DARK_GRAY}Available: sliding-window, sticky-facts, branching${Colors.RESET}")
-}
-
-private fun switchContextStrategy(session: ChatSession, name: String) {
-    val strategy = ContextStrategy.fromName(name)
-    if (strategy != null) {
-        session.switchContextStrategy(strategy)
-        println("${Colors.LIGHT_YELLOW}Strategy: ${strategy.name.lowercase()} (история очищена)${Colors.RESET}")
-    } else {
-        println("${Colors.LIGHT_YELLOW}Unknown strategy: $name. Available: sliding-window, sticky-facts, branching${Colors.RESET}")
-    }
-}
-
-private fun showFacts(session: ChatSession) {
-    val facts = session.getFacts()
-    if (facts.isEmpty()) {
-        println("${Colors.LIGHT_YELLOW}No facts yet. Use sticky-facts strategy and chat to accumulate.${Colors.RESET}")
-        return
-    }
-    println("${Colors.LIGHT_YELLOW}Stored facts:${Colors.RESET}")
-    facts.forEach { println("${Colors.LIGHT_YELLOW}  ${it.name}: ${it.value}${Colors.RESET}") }
-}
-
-private fun showBranch(session: ChatSession) {
-    val names = session.getBranchNames()
-    if (names.isEmpty()) {
-        println("${Colors.LIGHT_YELLOW}No branches. Use /branch checkpoint <b1> <b2> to create.${Colors.RESET}")
-        return
-    }
-    println("${Colors.LIGHT_YELLOW}Active branch: ${session.activeBranch ?: "none"}${Colors.RESET}")
-    println("${Colors.DARK_GRAY}Branches: ${names.joinToString(", ")}${Colors.RESET}")
-}
-
-private fun handleBranch(session: ChatSession, args: String) {
-    val parts = args.trim().split("\\s+".toRegex())
-    when {
-        parts[0] == "checkpoint" && parts.size >= 3 -> {
-            val b1 = parts[1]
-            val b2 = parts[2]
-            session.createCheckpoint(b1, b2)
-            println("${Colors.LIGHT_YELLOW}Checkpoint created. Branches: $b1, $b2. Active: $b1${Colors.RESET}")
-        }
-        parts[0] == "switch" && parts.size >= 2 -> {
-            val name = parts[1]
-            if (session.switchBranch(name)) {
-                println("${Colors.LIGHT_YELLOW}Switched to branch: $name${Colors.RESET}")
-            } else {
-                println("${Colors.LIGHT_YELLOW}Branch not found: $name. Available: ${session.getBranchNames().joinToString(", ")}${Colors.RESET}")
-            }
-        }
-        else -> println("${Colors.LIGHT_YELLOW}Usage: /branch checkpoint <b1> <b2>  |  /branch switch <name>${Colors.RESET}")
-    }
-}
-
 private fun showTotalTokens(session: ChatSession) {
     val entries = session.getTokenEntries()
     if (entries.isEmpty()) { println("${Colors.LIGHT_YELLOW}No token data yet.${Colors.RESET}"); return }
@@ -385,9 +348,24 @@ private fun showTotalTokens(session: ChatSession) {
         println("${Colors.LIGHT_YELLOW}#${it.request}  prompt: ${it.prompt} | completion: ${it.completion} | total: ${it.total}${Colors.RESET}")
     }
     val sumTotal = entries.sumOf { it.total }
-    val strategy = session.contextStrategy.name.lowercase()
     println("${Colors.LIGHT_YELLOW}─────────────────────────────")
-    println("Total tokens used: $sumTotal | strategy: $strategy${Colors.RESET}")
+    println("Total tokens used: $sumTotal${Colors.RESET}")
+}
+
+private fun showMemory(onboarding: ArchitectOnboarding) {
+    val longMemory = runCatching { onboarding.longMemoryFile.readText().trim() }.getOrElse { "" }
+    val workMemory = onboarding.buildWorkMemoryText()
+
+    println()
+    println("${Colors.LIGHT_YELLOW}═══ long_memory.md ═══${Colors.RESET}")
+    if (longMemory.isEmpty()) println("${Colors.DARK_GRAY}(пусто)${Colors.RESET}")
+    else println("${Colors.LIGHT_YELLOW}$longMemory${Colors.RESET}")
+
+    println()
+    println("${Colors.LIGHT_YELLOW}═══ work_memory.json ═══${Colors.RESET}")
+    if (workMemory.isEmpty()) println("${Colors.DARK_GRAY}(пусто)${Colors.RESET}")
+    else println("${Colors.LIGHT_YELLOW}$workMemory${Colors.RESET}")
+    println()
 }
 
 private fun showContext(session: ChatSession) {

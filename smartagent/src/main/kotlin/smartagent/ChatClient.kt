@@ -30,6 +30,7 @@ internal class ChatClient(private val session: ChatSession) {
             val fullMessages = buildList {
                 add(Message("system", session.currentSystemPrompt))
                 if (contextContent.isNotEmpty()) add(Message("assistant", contextContent))
+                add(timestampMessage())
                 add(Message("user", userContent))
             }
             requestBody = json.encodeToString(ChatRequest(session.currentModel.apiModelId, fullMessages))
@@ -66,18 +67,14 @@ internal class ChatClient(private val session: ChatSession) {
                 val responseForLog = json.encodeToString(enriched)
                 NetworkLogger.log(session.currentModel.url, reqHeaders, requestBody, response.code, resHeaders, body)
                 spinner.stop()
-                println("\n${Colors.LIGHT_VIOLET}$displayText${Colors.RESET}\n")
+                println()
+                println()
+                println("${Colors.LIGHT_VIOLET}$displayText${Colors.RESET}\n")
                 if (usage != null) {
                     println(Colors.LIGHT_YELLOW + "tokens → prompt: ${usage.prompt_tokens} | completion: ${usage.completion_tokens} | total: ${usage.total_tokens}" + Colors.RESET)
                     session.addTokenEntry(usage)
                 }
                 session.addLogEntry(LogEntry(text, requestBody, responseForLog))
-                if (session.contextStrategy == ContextStrategy.STICKY_FACTS && enriched.facts.isNotEmpty()) {
-                    session.updateFacts(enriched.facts)
-                }
-                if (session.contextStrategy == ContextStrategy.BRANCHING && session.activeBranch != null) {
-                    println(Colors.DARK_GRAY + "[Ветка: ${session.activeBranch}]" + Colors.RESET)
-                }
             }
         } catch (e: Exception) {
             spinner.stop()
