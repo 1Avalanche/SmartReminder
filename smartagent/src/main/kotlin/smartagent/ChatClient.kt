@@ -60,11 +60,7 @@ internal class ChatClient(private val session: ChatSession) {
                 session.addLogEntry(LogEntry(text, requestBody, body))
             } else {
                 val (displayText, structured) = session.parseResponse(reply)
-                val enriched = (structured ?: StructuredResponse(content = reply)).copy(
-                    summaryRequest = text,
-                    summaryResponse = displayText
-                )
-                val responseForLog = json.encodeToString(enriched)
+                val responseForLog = json.encodeToString(structured ?: StructuredResponse(content = reply))
                 NetworkLogger.log(session.currentModel.url, reqHeaders, requestBody, response.code, resHeaders, body)
                 spinner.stop()
                 println()

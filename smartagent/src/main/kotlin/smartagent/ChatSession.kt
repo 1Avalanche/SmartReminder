@@ -4,10 +4,6 @@ import java.io.File
 import kotlinx.serialization.encodeToString
 
 internal class ChatSession {
-    companion object {
-        const val SLIDING_WINDOW_SIZE = 6
-    }
-
     var currentModel: ModelConfig = ModelConfig.DEEPSEEK
         private set
 
@@ -99,9 +95,6 @@ internal class ChatSession {
 
     fun addLogEntry(entry: LogEntry) {
         history.add(entry)
-        if (history.size > SLIDING_WINDOW_SIZE) {
-            history.removeFirst()
-        }
         saveContext()
     }
 
@@ -120,20 +113,18 @@ internal class ChatSession {
 
     fun getHistory(): List<LogEntry> = history.toList()
 
-    fun buildContextContent(): String = buildContextSlidingWindow()
-
-    private fun buildContextSlidingWindow(): String {
-        val lastTen = history.takeLast(SLIDING_WINDOW_SIZE)
-            .mapNotNull { entry ->
-                try { json.decodeFromString<StructuredResponse>(entry.apiResponse) }
-                catch (_: Exception) { null }
-            }
-        if (lastTen.isEmpty()) return ""
+    fun buildContextContent(): String {
+        if (history.isEmpty()) return ""
         return buildString {
             appendLine("История сообщений:")
-            lastTen.forEach {
-                appendLine("Вопрос: ${it.summaryRequest}")
-                appendLine("Ответ: ${it.summaryResponse}")
+            history.forEach { entry ->
+                val content = try {
+                    json.decodeFromString<StructuredResponse>(entry.apiResponse).content
+                } catch (_: Exception) {
+                    entry.apiResponse
+                }
+                appendLine("Вопрос: ${entry.userInput}")
+                appendLine("Ответ: $content")
                 appendLine()
             }
         }.trimEnd()

@@ -37,6 +37,7 @@ enum class ModelConfig(
     val apiModelId: String,
     val apiKeyProperty: String,
     val url: String,
+    val contextWindow: Int,
     val aliases: List<String> = emptyList()
 ) {
     DEEPSEEK(
@@ -45,15 +46,17 @@ enum class ModelConfig(
         apiModelId = "deepseek-v4-pro",
         apiKeyProperty = "DEEPSEEK_STUDY_API_KEY",
         url = "https://api.deepseek.com/v1/chat/completions",
+        contextWindow = 1_000_000,
         aliases = listOf("deepseek-v4-pro")
     ),
     QWEN(
         shortName = "qwen",
-        description = "Исползует qwen/qwen3-235b-a22b-thinking-2507",
-        apiModelId = "qwen/qwen3-235b-a22b-thinking-2507",
+        description = "Исползует qwen/qwen3.7-plus",
+        apiModelId = "qwen/qwen3.7-plus",
         apiKeyProperty = "OPENROUTER_STUDY_API_KEY",
         url = "https://openrouter.ai/api/v1/chat/completions",
-        aliases = listOf("qwen3", "qwen3-235b-a22b-thinking")
+        contextWindow = 1_000_000,
+        aliases = listOf("qwen3", "qwen3.7-plus")
     ),
     QWEN_LOW(
         shortName = "qwen-low",
@@ -61,6 +64,7 @@ enum class ModelConfig(
         apiModelId = "qwen/qwen3-8b",
         apiKeyProperty = "OPENROUTER_STUDY_API_KEY",
         url = "https://openrouter.ai/api/v1/chat/completions",
+        contextWindow = 131_000,
         aliases = listOf("qwen3-8b")
     );
 

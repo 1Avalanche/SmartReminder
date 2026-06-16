@@ -167,7 +167,8 @@ private fun listModels(session: ChatSession) {
     println(Colors.LIGHT_YELLOW + "Available models names:" + Colors.RESET)
     ModelConfig.entries.forEachIndexed { index, model ->
         val check = if (model == session.currentModel) "✅ " else ""
-        println(Colors.LIGHT_YELLOW + "  ${index + 1}. $check${model.shortName}" + Colors.RESET)
+        val ctx = "%,d".format(model.contextWindow)
+        println(Colors.LIGHT_YELLOW + "  ${index + 1}. $check${model.shortName}  (context: $ctx tokens)" + Colors.RESET)
         println(Colors.LIGHT_GRAY + "     ${model.description}" + Colors.RESET)
     }
     println()
