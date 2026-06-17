@@ -79,7 +79,7 @@ private fun runRepl(session: ChatSession, client: ChatClient, architectOnboardin
                 System.out.flush()
                 val confirm = readlnOrNull()?.trim()?.lowercase()
                 if (confirm == "y" || confirm == "yes") {
-                    architectOnboarding.clearAll()
+                    architectOnboarding.clearAll(session)
                     session.clear()
                     println("${Colors.LIGHT_YELLOW}Все данные проекта очищены.${Colors.RESET}")
                 } else {

@@ -55,12 +55,13 @@ internal class ArchitectOnboarding {
         return true
     }
 
-    fun clearAll() {
+    fun clearAll(session: ChatSession? = null) {
         state = OnboardingState()
         pendingQuestion = null
         runCatching { onboardingFile.writeText(json.encodeToString(state)) }
         runCatching { longMemoryFile.writeText("") }
         runCatching { workMemoryFile.writeText("[]") }
+        session?.clearProfile()
     }
 
     fun appendDecision(decision: String) {

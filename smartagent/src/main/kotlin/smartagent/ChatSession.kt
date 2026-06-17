@@ -141,6 +141,10 @@ internal class ChatSession {
         runCatching { profileFile.writeText(content) }
     }
 
+    fun clearProfile() {
+        runCatching { profileFile.writeText("") }
+    }
+
     fun addTokenEntry(usage: Usage) {
         val entry = TokenEntry(
             request = tokenEntries.size + 1,
