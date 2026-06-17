@@ -1,19 +1,16 @@
-package smartagent
+package smartagent.architect
 
-import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import smartagent.ChatSession
+import smartagent.Colors
+import smartagent.json
+import smartagent.prettyJson
 import java.io.File
-
-@Serializable
-internal data class OnboardingQuestion(val id: Int, val question: String, val description: String)
-
-@Serializable
-internal data class OnboardingState(val answered: List<Int> = emptyList())
 
 internal class ArchitectOnboarding {
 
@@ -23,42 +20,14 @@ internal class ArchitectOnboarding {
         "prompts/architect"
     ).map(::File).firstOrNull { it.isDirectory } ?: File("smartagent/src/main/kotlin/prompts/architect")
 
-    private val onboardingFile: File = resolveFile("onboarding.json")
     val longMemoryFile: File = resolveFile("arch_settings.md")
     private val workMemoryFile: File = resolveFile("arch_tasks.json")
 
-    private val questions: List<OnboardingQuestion> by lazy {
-        runCatching {
-            json.decodeFromString<List<OnboardingQuestion>>(File(promptDir, "questions.json").readText())
-        }.getOrElse { emptyList() }
-    }
-
-    private var state: OnboardingState = loadState()
-    private var pendingQuestion: OnboardingQuestion? = null
-
-    val isWaitingForAnswer: Boolean get() = pendingQuestion != null
-
-    fun startSession() {
-        val allAnswered = questions.isNotEmpty() && questions.all { it.id in state.answered }
-        when {
-            allAnswered -> printFile("hello_second.md")
-            state.answered.isEmpty() -> { printFile("hello_first.md"); println(); askNext() }
-            else -> { printFile("hello_second.md"); println(); askNext() }
-        }
-    }
-
-    fun handleAnswer(input: String): Boolean {
-        val q = pendingQuestion ?: return false
-        appendAnswer(q, input)
-        markAnswered(q.id)
-        askNext()
-        return true
+    fun startSession(hasActiveFeature: Boolean = false) {
+        if (hasActiveFeature) printFile("hello_second.md") else printFile("hello_first.md")
     }
 
     fun clearAll(session: ChatSession? = null) {
-        state = OnboardingState()
-        pendingQuestion = null
-        runCatching { onboardingFile.writeText(json.encodeToString(state)) }
         runCatching { longMemoryFile.writeText("") }
         runCatching { workMemoryFile.writeText("[]") }
         session?.clearProfile()
@@ -112,32 +81,6 @@ internal class ArchitectOnboarding {
             JsonObject(task.mapValues { (_, v) -> JsonPrimitive(v) })
         })
         runCatching { workMemoryFile.writeText(prettyJson.encodeToString(JsonArray.serializer(), array)) }
-    }
-
-    private fun askNext() {
-        val next = questions.firstOrNull { it.id !in state.answered }
-        pendingQuestion = next
-        if (next != null) {
-            println("${Colors.LIGHT_VIOLET}${next.question}${Colors.RESET}\n")
-        } else {
-            printFile("onboarding_finish.md")
-        }
-    }
-
-    private fun appendAnswer(q: OnboardingQuestion, answer: String) {
-        longMemoryFile.appendText("${q.description} $answer\n")
-    }
-
-    private fun markAnswered(id: Int) {
-        state = state.copy(answered = state.answered + id)
-        runCatching { onboardingFile.writeText(json.encodeToString(state)) }
-    }
-
-    private fun loadState(): OnboardingState {
-        if (!onboardingFile.exists()) return OnboardingState()
-        return runCatching {
-            json.decodeFromString<OnboardingState>(onboardingFile.readText())
-        }.getOrElse { OnboardingState() }
     }
 
     private fun printFile(name: String) {

@@ -1,4 +1,4 @@
-package smartagent
+package smartagent.architect
 
 import kotlinx.serialization.encodeToString
 import okhttp3.Headers
@@ -6,6 +6,20 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import smartagent.ArchitectResponse
+import smartagent.ChatRequest
+import smartagent.ChatResponse
+import smartagent.ChatSession
+import smartagent.Colors
+import smartagent.Config
+import smartagent.EscCanceller
+import smartagent.LogEntry
+import smartagent.Message
+import smartagent.NetworkLogger
+import smartagent.ProfileAgent
+import smartagent.Spinner
+import smartagent.json
+import smartagent.timestampMessage
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
 

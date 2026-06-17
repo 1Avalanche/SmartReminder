@@ -1,5 +1,17 @@
 package smartagent
 
+import smartagent.architect.ArchitectClient
+import smartagent.architect.ArchitectOnboarding
+import smartagent.architect.ExecutionAgent
+import smartagent.architect.FeatureOrchestrator
+import smartagent.architect.FeatureRepository
+import smartagent.architect.FeatureStatus
+import smartagent.architect.IntentClassifier
+import smartagent.architect.PlanningAgent
+import smartagent.architect.Stage
+import smartagent.architect.TaskRepository
+import smartagent.architect.TaskStatus
+import smartagent.architect.ValidationAgent
 import java.io.File
 
 fun main(args: Array<String>) {
@@ -21,18 +33,25 @@ fun main(args: Array<String>) {
     val client = ChatClient(session)
     val architectOnboarding = ArchitectOnboarding()
     val architectClient = ArchitectClient(session, architectOnboarding)
+    val featureRepository = FeatureRepository()
+    val taskRepository = TaskRepository()
+    val intentClassifier = IntentClassifier(session, featureRepository, taskRepository)
+    val planningAgent = PlanningAgent(session, taskRepository)
+    val executionAgent = ExecutionAgent(session, taskRepository)
+    val validationAgent = ValidationAgent(session, taskRepository)
+    val featureOrchestrator = FeatureOrchestrator(featureRepository, taskRepository, intentClassifier, planningAgent, executionAgent, validationAgent)
 
     if (session.currentMode == AgentMode.ARCHITECT) {
         println("${Colors.DARK_GRAY}Model: ${session.currentModel.shortName} | Mode: ${session.currentMode.displayName}")
         println("Type /help for commands, /exit to quit.${Colors.RESET}\n")
-        architectOnboarding.startSession()
+        architectOnboarding.startSession(featureRepository.getActiveFeature() != null)
     } else {
         println("${Colors.LIGHT_YELLOW}SmartAgent готов к работе!${Colors.RESET}")
         println("${Colors.DARK_GRAY}Model: ${session.currentModel.shortName} | Mode: ${session.currentMode.displayName}")
         println("Type /help for commands, /exit to quit.${Colors.RESET}\n")
     }
 
-    runRepl(session, client, architectOnboarding, architectClient)
+    runRepl(session, client, architectOnboarding, architectClient, featureRepository, taskRepository, intentClassifier, featureOrchestrator)
 }
 
 private data class ParsedArgs(
@@ -54,7 +73,16 @@ private fun parseArgs(args: Array<String>): ParsedArgs {
     return ParsedArgs(model, repoPath)
 }
 
-private fun runRepl(session: ChatSession, client: ChatClient, architectOnboarding: ArchitectOnboarding, architectClient: ArchitectClient) {
+private fun runRepl(
+    session: ChatSession,
+    client: ChatClient,
+    architectOnboarding: ArchitectOnboarding,
+    architectClient: ArchitectClient,
+    featureRepository: FeatureRepository,
+    taskRepository: TaskRepository,
+    intentClassifier: IntentClassifier,
+    featureOrchestrator: FeatureOrchestrator
+) {
     while (true) {
         print("${Colors.BRIGHT_WHITE}> ")
         System.out.flush()
@@ -80,6 +108,8 @@ private fun runRepl(session: ChatSession, client: ChatClient, architectOnboardin
                 val confirm = readlnOrNull()?.trim()?.lowercase()
                 if (confirm == "y" || confirm == "yes") {
                     architectOnboarding.clearAll(session)
+                    featureRepository.clearAll()
+                    taskRepository.clearAll()
                     session.clear()
                     println("${Colors.LIGHT_YELLOW}Все данные проекта очищены.${Colors.RESET}")
                 } else {
@@ -102,7 +132,7 @@ private fun runRepl(session: ChatSession, client: ChatClient, architectOnboardin
                 val modeName = input.removePrefix("/mode ").trim()
                 switchMode(session, modeName)
                 if (session.currentMode == AgentMode.ARCHITECT) {
-                    architectOnboarding.startSession()
+                    architectOnboarding.startSession(featureRepository.getActiveFeature() != null)
                 }
             }
             input == "/totalTokens" -> showTotalTokens(session)
@@ -112,13 +142,38 @@ private fun runRepl(session: ChatSession, client: ChatClient, architectOnboardin
                 val (path, prompt) = parseAnalyzeArgs(input.removePrefix("/analyze ").trim())
                 analyzeCode(session, client, path, prompt)
             }
+            // Feature commands
+            input == "/features" -> showFeatures(featureRepository, taskRepository)
+            input.startsWith("/feature create ") -> createFeature(featureRepository, input.removePrefix("/feature create ").trim())
+            input == "/feature current" -> showCurrentFeature(featureRepository)
+            input.startsWith("/feature switch ") -> switchFeature(featureRepository, taskRepository, input.removePrefix("/feature switch ").trim())
+            input == "/feature state" -> showFeatureState(featureRepository, taskRepository)
+            input == "/feature pause" -> pauseActiveFeature(featureRepository)
+            input == "/feature resume" -> resumeActiveFeature(featureRepository)
+            input == "/feature info" -> showFeatureInfo(featureRepository, taskRepository)
+            // Status and diagnostic commands
+            input == "/status" -> showStatus(featureRepository, taskRepository)
+            input.startsWith("/classify ") -> classifyDiagnostic(intentClassifier, input.removePrefix("/classify ").trim())
+            // Debug commands (not shown in help)
+            input == "/debug tasks" -> debugTasks(featureRepository, taskRepository)
+            input == "/debug task current" -> debugCurrentTask(featureRepository, taskRepository)
+            input == "/debug task history" -> debugTaskHistory(featureRepository, taskRepository)
+            input == "/debug task artifact" -> debugTaskArtifact(featureRepository, taskRepository)
+            input == "/debug task review" -> debugTaskReview(featureRepository, taskRepository)
             input.startsWith("/") -> println("${Colors.LIGHT_YELLOW}Unknown command: $input${Colors.RESET}")
             else -> {
                 when {
-                    session.currentMode == AgentMode.ARCHITECT && architectOnboarding.isWaitingForAnswer ->
-                        architectOnboarding.handleAnswer(input)
-                    session.currentMode == AgentMode.ARCHITECT ->
-                        architectClient.sendMessage(input)
+                    session.currentMode == AgentMode.ARCHITECT -> {
+                        val callLLM = featureOrchestrator.process(input)
+                        if (callLLM) {
+                            architectClient.sendMessage(input)
+                        } else {
+                            session.addLogEntry(LogEntry(input, "", ""))
+                            if (session.shouldTriggerProfile()) Thread {
+                                ProfileAgent(session).update()
+                            }.apply { isDaemon = true }.start()
+                        }
+                    }
                     else -> client.sendMessage(input)
                 }
             }
@@ -133,7 +188,7 @@ Commands:
   /help                           Show this help
   /history, /hist                 Show full chat history (JSON)
   /clear, /new                    Clear chat history and file context
-  /clearAll                       Clear all project data (arch_settings.md + onboarding.json)
+  /clearAll                       Clear all project data
   /models                         List available models
   /model <name>                   Switch model (deepseek, qwen, qwen-low)
   /repo                           Show current repo path
@@ -145,11 +200,25 @@ Commands:
   /context clear                  Remove all files from context
   /mode                           Show current mode
   /mode <name>                    Switch mode (chat, code-analyzer, architect)
-  /memory                         Show contents of arch_settings.md and arch_tasks.json
+  /memory                         Show arch_settings.md and arch_tasks.json
   /profile                        Show user_profile.md
   /totalTokens                    Show token usage per request + total sum
   /analyze <path> [prompt]        Collect all text files from path and send for analysis
-  <message>                       Send a message to the current model
+
+Project commands:
+  /features                       List all projects
+  /feature create <title>         Create project and make it active
+  /feature current                Show active project
+  /feature switch <id>            Switch active project
+  /feature state                  Show project overview
+  /feature pause                  Pause active project
+  /feature resume                 Resume a paused project
+  /feature info                   Show project details
+
+Other:
+  /status                         Show what's happening right now
+  /classify <message>             Diagnose intent without changing state
+  <message>                       Send a message (architect mode: guided dialog)
     """.trimIndent() + Colors.RESET)
 }
 
@@ -388,6 +457,299 @@ private fun showContext(session: ChatSession) {
     }
     println("${Colors.LIGHT_YELLOW}Files in context:${Colors.RESET}")
     paths.forEach { println("${Colors.LIGHT_GRAY}  $it${Colors.RESET}") }
+}
+
+// ─── Feature commands ─────────────────────────────────────────────────────────
+
+private fun showFeatures(repo: FeatureRepository, taskRepo: TaskRepository) {
+    val all = repo.getAllFeatures()
+    if (all.isEmpty()) {
+        println("${Colors.DARK_GRAY}Нет фич. Создай: /feature create <название>${Colors.RESET}")
+        return
+    }
+    val grouped = all.groupBy { it.status }
+    listOf(FeatureStatus.ACTIVE, FeatureStatus.PAUSED, FeatureStatus.COMPLETED).forEach { status ->
+        val features = grouped[status] ?: return@forEach
+        println("${Colors.LIGHT_YELLOW}[${status.name}]${Colors.RESET}")
+        features.forEach { f ->
+            val tasks = taskRepo.getTasksForFeature(f.id)
+            val done = tasks.count { it.status == TaskStatus.COMPLETED }
+            val total = tasks.size
+            println("${Colors.LIGHT_GRAY}  ${f.id} | ${f.title}  ($done/$total tasks done)${Colors.RESET}")
+        }
+    }
+    println()
+}
+
+private fun createFeature(repo: FeatureRepository, title: String) {
+    if (title.isBlank()) {
+        println("${Colors.LIGHT_YELLOW}Укажи название: /feature create <название>${Colors.RESET}")
+        return
+    }
+    val feature = repo.createFeature(title)
+    println("${Colors.LIGHT_GREEN}Создана фича: ${feature.id} | ${feature.title}${Colors.RESET}")
+    println("${Colors.DARK_GRAY}Создай задачу: /task new <описание>${Colors.RESET}")
+}
+
+private fun showCurrentFeature(repo: FeatureRepository) {
+    val feature = repo.getActiveFeature()
+    if (feature == null) {
+        println("${Colors.LIGHT_YELLOW}Нет активной фичи. Создай: /feature create <название>${Colors.RESET}")
+        return
+    }
+    println("${Colors.LIGHT_YELLOW}Активная фича:${Colors.RESET}")
+    println("${Colors.LIGHT_GREEN}${feature.id} | ${feature.title}${Colors.RESET}")
+}
+
+private fun switchFeature(repo: FeatureRepository, taskRepo: TaskRepository, id: String) {
+    if (id.isBlank()) {
+        println("${Colors.LIGHT_YELLOW}Укажи id: /feature switch <id>${Colors.RESET}")
+        return
+    }
+    val target = repo.getFeature(id)
+    if (target == null) {
+        println("${Colors.LIGHT_YELLOW}Фича не найдена: $id${Colors.RESET}")
+        return
+    }
+    if (target.status == FeatureStatus.COMPLETED) {
+        println("${Colors.LIGHT_YELLOW}Фича завершена, нельзя переключить на COMPLETED-фичу.${Colors.RESET}")
+        return
+    }
+    val prev = repo.getActiveFeature()
+    repo.setActiveFeature(id)
+
+    if (prev != null && prev.id != id) {
+        println("${Colors.DARK_GRAY}${prev.id} | ${prev.title} → PAUSED${Colors.RESET}")
+    }
+    println("${Colors.LIGHT_GREEN}Активный проект: ${target.id} | ${target.title}${Colors.RESET}")
+    val activeTask = taskRepo.getActiveTaskForFeature(id)
+    if (activeTask != null) {
+        println("${Colors.DARK_GRAY}Продолжаем: ${activeTask.title} | ${activeTask.stage.displayName()}${Colors.RESET}")
+    }
+}
+
+private fun showFeatureState(repo: FeatureRepository, taskRepo: TaskRepository) {
+    val feature = repo.getActiveFeature() ?: run {
+        println("${Colors.LIGHT_YELLOW}Нет активной фичи.${Colors.RESET}")
+        return
+    }
+    println()
+    println("${Colors.LIGHT_YELLOW}Фича: ${feature.id} | ${feature.title}${Colors.RESET}")
+    println("${Colors.LIGHT_YELLOW}Статус: ${feature.status}${Colors.RESET}")
+    if (feature.summary.isNotBlank()) {
+        println("${Colors.LIGHT_YELLOW}Summary: ${feature.summary}${Colors.RESET}")
+    }
+    println()
+    val tasks = taskRepo.getTasksForFeature(feature.id)
+    if (tasks.isEmpty()) {
+        println("${Colors.DARK_GRAY}Нет задач. Опишите задачу в чате.${Colors.RESET}")
+    } else {
+        println("${Colors.LIGHT_YELLOW}Задачи:${Colors.RESET}")
+        tasks.forEach { t ->
+            val marker = if (t.status == TaskStatus.COMPLETED) "✓" else "→"
+            println("${Colors.LIGHT_GRAY}  $marker ${t.title} | ${t.stage.displayName()}${Colors.RESET}")
+        }
+    }
+    println()
+}
+
+private fun pauseActiveFeature(repo: FeatureRepository) {
+    val feature = repo.getActiveFeature() ?: run {
+        println("${Colors.LIGHT_YELLOW}Нет активной фичи.${Colors.RESET}")
+        return
+    }
+    repo.updateFeature(feature.copy(status = FeatureStatus.PAUSED))
+    println("${Colors.LIGHT_YELLOW}${feature.title} → PAUSED${Colors.RESET}")
+}
+
+private fun resumeActiveFeature(repo: FeatureRepository) {
+    val all = repo.getAllFeatures()
+    val paused = all.filter { it.status == FeatureStatus.PAUSED }
+    if (paused.isEmpty()) {
+        println("${Colors.LIGHT_YELLOW}Нет приостановленных фич.${Colors.RESET}")
+        return
+    }
+    if (paused.size > 1) {
+        println("${Colors.LIGHT_YELLOW}Несколько приостановленных фич. Используй /feature switch <id>:${Colors.RESET}")
+        paused.forEach { f ->
+            println("${Colors.LIGHT_GRAY}  ${f.id} | ${f.title}${Colors.RESET}")
+        }
+        return
+    }
+    val feature = paused.first()
+    repo.setActiveFeature(feature.id)
+    println("${Colors.LIGHT_GREEN}${feature.title} → ACTIVE${Colors.RESET}")
+}
+
+private fun showFeatureInfo(repo: FeatureRepository, taskRepo: TaskRepository) {
+    val feature = repo.getActiveFeature() ?: run {
+        println("${Colors.LIGHT_YELLOW}Нет активной фичи.${Colors.RESET}")
+        return
+    }
+    println()
+    println("${Colors.LIGHT_YELLOW}Фича:${Colors.RESET} ${feature.id} | ${feature.title}")
+    println("${Colors.LIGHT_YELLOW}Статус:${Colors.RESET} ${feature.status}")
+    if (feature.summary.isNotBlank()) {
+        println("${Colors.LIGHT_YELLOW}Summary:${Colors.RESET} ${feature.summary}")
+    }
+    println("${Colors.LIGHT_YELLOW}Создана:${Colors.RESET} ${feature.createdAt}")
+    println()
+    val tasks = taskRepo.getTasksForFeature(feature.id)
+    if (tasks.isNotEmpty()) {
+        println("${Colors.LIGHT_YELLOW}Задачи (${tasks.size}):${Colors.RESET}")
+        tasks.forEach { t ->
+            val marker = if (t.status == TaskStatus.COMPLETED) "✓" else "→"
+            println("${Colors.LIGHT_GRAY}  $marker ${t.title} | ${t.stage.displayName()}${Colors.RESET}")
+        }
+    }
+    println()
+}
+
+// ─── Status and diagnostic ────────────────────────────────────────────────────
+
+private fun showStatus(featureRepo: FeatureRepository, taskRepo: TaskRepository) {
+    val feature = featureRepo.getActiveFeature()
+    if (feature == null) {
+        println("${Colors.LIGHT_YELLOW}Нет активного проекта.${Colors.RESET}")
+        return
+    }
+    val task = taskRepo.getActiveTaskForFeature(feature.id)
+    println()
+    println("${Colors.LIGHT_YELLOW}Проект:${Colors.RESET}")
+    println("${Colors.LIGHT_GREEN}${feature.title}${Colors.RESET}")
+    if (task != null) {
+        println()
+        println("${Colors.LIGHT_YELLOW}Сейчас работаем над:${Colors.RESET}")
+        println("${Colors.LIGHT_GREEN}${task.title}${Colors.RESET}")
+        println()
+        println("${Colors.LIGHT_YELLOW}Этап:${Colors.RESET}")
+        println("${Colors.LIGHT_GREEN}${task.stage.displayName()}${Colors.RESET}")
+        if (task.expectedAction != null) {
+            println()
+            println("${Colors.LIGHT_YELLOW}Ожидается:${Colors.RESET}")
+            println("${Colors.LIGHT_GREEN}${task.expectedAction}${Colors.RESET}")
+        }
+    } else {
+        println()
+        println("${Colors.DARK_GRAY}Нет активной работы. Опишите задачу в чате.${Colors.RESET}")
+    }
+    println()
+}
+
+// ─── Debug commands (not shown in help) ───────────────────────────────────────
+
+private fun debugTasks(featureRepo: FeatureRepository, taskRepo: TaskRepository) {
+    val feature = featureRepo.getActiveFeature() ?: run {
+        println("${Colors.DARK_GRAY}[debug] no active feature${Colors.RESET}")
+        return
+    }
+    val tasks = taskRepo.getTasksForFeature(feature.id)
+    println()
+    println("${Colors.DARK_GRAY}[debug] feature=${feature.id} | tasks=${tasks.size}${Colors.RESET}")
+    tasks.forEach { t ->
+        val marker = when (t.status) {
+            TaskStatus.ACTIVE -> "▶"
+            TaskStatus.COMPLETED -> "✓"
+            TaskStatus.PAUSED -> "‖"
+        }
+        println("${Colors.DARK_GRAY}  $marker ${t.id} | ${t.title} | ${t.stage} | ${t.status}${Colors.RESET}")
+    }
+    println()
+}
+
+private fun debugCurrentTask(featureRepo: FeatureRepository, taskRepo: TaskRepository) {
+    val feature = featureRepo.getActiveFeature() ?: run {
+        println("${Colors.DARK_GRAY}[debug] no active feature${Colors.RESET}")
+        return
+    }
+    val task = taskRepo.getActiveTaskForFeature(feature.id) ?: run {
+        println("${Colors.DARK_GRAY}[debug] no active task for ${feature.id}${Colors.RESET}")
+        return
+    }
+    println()
+    println("${Colors.DARK_GRAY}[debug] task=${task.id} | featureId=${task.featureId}${Colors.RESET}")
+    println("${Colors.DARK_GRAY}title=${task.title}${Colors.RESET}")
+    println("${Colors.DARK_GRAY}status=${task.status} | stage=${task.stage}${Colors.RESET}")
+    if (task.currentStep != null) println("${Colors.DARK_GRAY}currentStep=${task.currentStep}${Colors.RESET}")
+    if (task.expectedAction != null) println("${Colors.DARK_GRAY}expectedAction=${task.expectedAction}${Colors.RESET}")
+    if (task.summary.isNotBlank()) println("${Colors.DARK_GRAY}summary=${task.summary}${Colors.RESET}")
+    println()
+}
+
+private fun debugTaskHistory(featureRepo: FeatureRepository, taskRepo: TaskRepository) {
+    val feature = featureRepo.getActiveFeature() ?: run {
+        println("${Colors.DARK_GRAY}[debug] no active feature${Colors.RESET}")
+        return
+    }
+    val task = taskRepo.getActiveTaskForFeature(feature.id) ?: run {
+        println("${Colors.DARK_GRAY}[debug] no active task${Colors.RESET}")
+        return
+    }
+    val history = taskRepo.getHistory(task.id)
+    println()
+    println("${Colors.DARK_GRAY}[debug] history for ${task.id}${Colors.RESET}")
+    println()
+    if (history.isEmpty()) println("${Colors.DARK_GRAY}(empty)${Colors.RESET}")
+    else println("${Colors.DARK_GRAY}$history${Colors.RESET}")
+    println()
+}
+
+private fun debugTaskArtifact(featureRepo: FeatureRepository, taskRepo: TaskRepository) {
+    val feature = featureRepo.getActiveFeature() ?: run {
+        println("${Colors.DARK_GRAY}[debug] no active feature${Colors.RESET}")
+        return
+    }
+    val task = taskRepo.getActiveTaskForFeature(feature.id) ?: run {
+        println("${Colors.DARK_GRAY}[debug] no active task${Colors.RESET}")
+        return
+    }
+    val artifact = taskRepo.getArchitecture(task.id)
+    println()
+    println("${Colors.DARK_GRAY}[debug] artifact for ${task.id}${Colors.RESET}")
+    println()
+    if (artifact.isBlank()) println("${Colors.DARK_GRAY}(empty)${Colors.RESET}")
+    else println("${Colors.DARK_GRAY}$artifact${Colors.RESET}")
+    println()
+}
+
+private fun debugTaskReview(featureRepo: FeatureRepository, taskRepo: TaskRepository) {
+    val feature = featureRepo.getActiveFeature() ?: run {
+        println("${Colors.DARK_GRAY}[debug] no active feature${Colors.RESET}")
+        return
+    }
+    val task = taskRepo.getActiveTaskForFeature(feature.id) ?: run {
+        println("${Colors.DARK_GRAY}[debug] no active task${Colors.RESET}")
+        return
+    }
+    val review = taskRepo.getReview(task.id)
+    println()
+    println("${Colors.DARK_GRAY}[debug] review for ${task.id}${Colors.RESET}")
+    println()
+    if (review.isBlank()) println("${Colors.DARK_GRAY}(empty)${Colors.RESET}")
+    else println("${Colors.DARK_GRAY}$review${Colors.RESET}")
+    println()
+}
+
+private fun classifyDiagnostic(classifier: IntentClassifier, message: String) {
+    if (message.isBlank()) {
+        println("${Colors.LIGHT_YELLOW}Usage: /classify <message>${Colors.RESET}")
+        return
+    }
+    println("${Colors.DARK_GRAY}Classifying...${Colors.RESET}")
+    val result = classifier.classify(message)
+    if (result == null) {
+        println("${Colors.LIGHT_YELLOW}Classification failed.${Colors.RESET}")
+        return
+    }
+    val featureIdLine = result.featureId?.let { "\"$it\"" } ?: "null"
+    val reasonLine = result.reason?.let { "\"$it\"" } ?: "null"
+    println(Colors.LIGHT_VIOLET + """
+{
+  "intent": "${result.intent}",
+  "featureId": $featureIdLine,
+  "confidence": ${result.confidence},
+  "reason": $reasonLine
+}""".trimIndent() + Colors.RESET)
 }
 
 private fun setupKeysIfNeeded() {
