@@ -24,8 +24,8 @@ internal class ArchitectOnboarding {
     ).map(::File).firstOrNull { it.isDirectory } ?: File("smartagent/src/main/kotlin/prompts/architect")
 
     private val onboardingFile: File = resolveFile("onboarding.json")
-    val longMemoryFile: File = resolveFile("long_memory.md")
-    private val workMemoryFile: File = resolveFile("work_memory.json")
+    val longMemoryFile: File = resolveFile("arch_settings.md")
+    private val workMemoryFile: File = resolveFile("arch_tasks.json")
 
     private val questions: List<OnboardingQuestion> by lazy {
         runCatching {

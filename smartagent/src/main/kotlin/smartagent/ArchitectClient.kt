@@ -74,6 +74,7 @@ internal class ArchitectClient(
             }
 
             session.addLogEntry(LogEntry(userInput, requestBody, json.encodeToString(architectResponse)))
+            if (session.shouldTriggerProfile()) ProfileAgent(session).update()
 
             architectResponse.decision?.takeIf { it.isNotBlank() }?.let {
                 onboarding.appendDecision(it)

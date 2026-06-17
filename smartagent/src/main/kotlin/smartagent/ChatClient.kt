@@ -86,6 +86,7 @@ internal class ChatClient(private val session: ChatSession) {
                         session.updateLastPromptTokens(usage.prompt_tokens)
                     }
                     session.addLogEntry(LogEntry(text, requestBody, responseForLog))
+                    if (session.shouldTriggerProfile()) ProfileAgent(session).update()
                 }
                 break
             }

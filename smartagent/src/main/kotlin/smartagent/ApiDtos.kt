@@ -47,7 +47,8 @@ internal data class ContextFile(
     val history: List<LogEntry> = emptyList(),
     val summary: String = "",
     val agentMode: AgentMode = AgentMode.CHAT,
-    val lastPromptTokens: Int = 0
+    val lastPromptTokens: Int = 0,
+    val userMessageCount: Int = 0
 )
 
 @Serializable

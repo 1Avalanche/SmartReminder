@@ -12,7 +12,14 @@ internal class ChatSession {
         private set
 
     val currentSystemPrompt: String
-        get() = "${currentMode.basePrompt}\n${CONTEXT_FORMAT_INSTRUCTION}"
+        get() = buildString {
+            append(currentMode.basePrompt)
+            val profile = loadUserProfile()
+            if (profile.isNotBlank()) {
+                append("\n\n## Долгосрочный профиль пользователя\n$profile")
+            }
+            append("\n$CONTEXT_FORMAT_INSTRUCTION")
+        }
 
     var repoContext: RepoContext? = null
 
@@ -22,6 +29,9 @@ internal class ChatSession {
     var lastPromptTokens: Int = 0
         private set
 
+    var userMessageCount: Int = 0
+        private set
+
     private val history = mutableListOf<LogEntry>()
     private val fileContext = mutableListOf<Pair<String, String>>()
 
@@ -29,6 +39,13 @@ internal class ChatSession {
         val path = listOf("cli/context.json", "context.json")
             .firstOrNull { File(it).parentFile?.exists() ?: true }
             ?: "context.json"
+        File(path)
+    }
+
+    val profileFile: File by lazy {
+        val path = listOf("cli/user_profile.md", "user_profile.md")
+            .firstOrNull { File(it).parentFile?.exists() ?: true }
+            ?: "user_profile.md"
         File(path)
     }
 
@@ -51,6 +68,7 @@ internal class ChatSession {
                 currentMode = ctx.agentMode
                 summary = ctx.summary
                 lastPromptTokens = ctx.lastPromptTokens
+                userMessageCount = ctx.userMessageCount
             } ?: runCatching {
                 json.decodeFromString<List<LogEntry>>(text)
             }.getOrNull()?.let { history.addAll(it) }
@@ -78,6 +96,7 @@ internal class ChatSession {
         tokenEntries.clear()
         summary = ""
         lastPromptTokens = 0
+        userMessageCount = 0
         NetworkLogger.clear()
         saveContext()
         runCatching { tokensFile.writeText("[]") }
@@ -106,7 +125,20 @@ internal class ChatSession {
 
     fun addLogEntry(entry: LogEntry) {
         history.add(entry)
+        userMessageCount++
         saveContext()
+    }
+
+    fun shouldTriggerProfile(): Boolean = userMessageCount > 0 && userMessageCount % 3 == 0
+
+    fun getLastUserInputs(n: Int): List<String> =
+        history.takeLast(n).map { it.userInput }
+
+    fun loadUserProfile(): String =
+        runCatching { profileFile.readText().trim() }.getOrElse { "" }
+
+    fun saveUserProfile(content: String) {
+        runCatching { profileFile.writeText(content) }
     }
 
     fun addTokenEntry(usage: Usage) {
@@ -190,7 +222,8 @@ internal class ChatSession {
                         history = history.toList(),
                         summary = summary,
                         agentMode = currentMode,
-                        lastPromptTokens = lastPromptTokens
+                        lastPromptTokens = lastPromptTokens,
+                        userMessageCount = userMessageCount
                     )
                 )
             )

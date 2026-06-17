@@ -71,7 +71,7 @@ OPENROUTER_STUDY_API_KEY=sk-...
 | `/context clear`            | Очистить файловый контекст                                |
 | `/analyze <path> [prompt]`  | Собрать все текстовые файлы из пути и отправить на анализ |
 | `/totalTokens`              | Статистика токенов по запросам                            |
-| `/memory`                   | Показать long_memory.md и work_memory.json (architect)    |
+| `/memory`                   | Показать arch_settings.md и arch_tasks.json (architect)   |
 
 ## Архитектура
 
@@ -105,14 +105,14 @@ smartagent/src/main/kotlin/smartagent/
 
 ### Architect-режим
 
-При первом запуске проходит онбординг (вопросы из `prompts/architect/questions.json`). Ответы сохраняются в `long_memory.md` и включаются в system-prompt каждого запроса.
+При первом запуске проходит онбординг (вопросы из `prompts/architect/questions.json`). Ответы сохраняются в `arch_settings.md` и включаются в system-prompt каждого запроса.
 
 Модель возвращает JSON с полями:
 ```json
 { "content": "...", "decision": "...", "currentTask": "название: описание" }
 ```
-- `decision` — автоматически дописывается в `long_memory.md`  
-- `currentTask` — upsert в `work_memory.json`
+- `decision` — автоматически дописывается в `arch_settings.md`  
+- `currentTask` — upsert в `arch_tasks.json`
 
 История не сбрасывается между сообщениями в рамках сессии; `/clear` сбрасывает сессию, `/clearAll` удаляет оба файла памяти.
 

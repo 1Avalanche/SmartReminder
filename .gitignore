@@ -19,5 +19,6 @@ captures
 node_modules/
 smartagent/network.log
 smartagent/context.json
-smartagent/long_memory.md
-smartagent/work_memory.json
+smartagent/arch_settings.md
+smartagent/arch_tasks.json
+smartagent/user_profile.md

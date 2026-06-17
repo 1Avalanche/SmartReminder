@@ -107,6 +107,7 @@ private fun runRepl(session: ChatSession, client: ChatClient, architectOnboardin
             }
             input == "/totalTokens" -> showTotalTokens(session)
             input == "/memory" -> showMemory(architectOnboarding)
+            input == "/profile" -> showProfile(session)
             input.startsWith("/analyze ") -> {
                 val (path, prompt) = parseAnalyzeArgs(input.removePrefix("/analyze ").trim())
                 analyzeCode(session, client, path, prompt)
@@ -132,7 +133,7 @@ Commands:
   /help                           Show this help
   /history, /hist                 Show full chat history (JSON)
   /clear, /new                    Clear chat history and file context
-  /clearAll                       Clear all project data (long_memory.md + onboarding.json)
+  /clearAll                       Clear all project data (arch_settings.md + onboarding.json)
   /models                         List available models
   /model <name>                   Switch model (deepseek, qwen, qwen-low)
   /repo                           Show current repo path
@@ -144,7 +145,8 @@ Commands:
   /context clear                  Remove all files from context
   /mode                           Show current mode
   /mode <name>                    Switch mode (chat, code-analyzer, architect)
-  /memory                         Show contents of long_memory.md and work_memory.json
+  /memory                         Show contents of arch_settings.md and arch_tasks.json
+  /profile                        Show user_profile.md
   /totalTokens                    Show token usage per request + total sum
   /analyze <path> [prompt]        Collect all text files from path and send for analysis
   <message>                       Send a message to the current model
@@ -353,17 +355,26 @@ private fun showTotalTokens(session: ChatSession) {
     println("Total tokens used: $sumTotal${Colors.RESET}")
 }
 
+private fun showProfile(session: ChatSession) {
+    val profile = session.loadUserProfile()
+    println()
+    println("${Colors.LIGHT_YELLOW}═══ user_profile.md ═══${Colors.RESET}")
+    if (profile.isEmpty()) println("${Colors.DARK_GRAY}(пусто — профиль появится после 3-го сообщения)${Colors.RESET}")
+    else println("${Colors.LIGHT_YELLOW}$profile${Colors.RESET}")
+    println()
+}
+
 private fun showMemory(onboarding: ArchitectOnboarding) {
     val longMemory = runCatching { onboarding.longMemoryFile.readText().trim() }.getOrElse { "" }
     val workMemory = onboarding.buildWorkMemoryText()
 
     println()
-    println("${Colors.LIGHT_YELLOW}═══ long_memory.md ═══${Colors.RESET}")
+    println("${Colors.LIGHT_YELLOW}═══ arch_settings.md ═══${Colors.RESET}")
     if (longMemory.isEmpty()) println("${Colors.DARK_GRAY}(пусто)${Colors.RESET}")
     else println("${Colors.LIGHT_YELLOW}$longMemory${Colors.RESET}")
 
     println()
-    println("${Colors.LIGHT_YELLOW}═══ work_memory.json ═══${Colors.RESET}")
+    println("${Colors.LIGHT_YELLOW}═══ arch_tasks.json ═══${Colors.RESET}")
     if (workMemory.isEmpty()) println("${Colors.DARK_GRAY}(пусто)${Colors.RESET}")
     else println("${Colors.LIGHT_YELLOW}$workMemory${Colors.RESET}")
     println()
