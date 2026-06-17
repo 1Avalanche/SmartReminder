@@ -7,6 +7,7 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicReference
 
 internal class ArchitectClient(
     private val session: ChatSession,
@@ -27,6 +28,9 @@ internal class ArchitectClient(
 
         val spinner = Spinner()
         var requestBody = ""
+        val activeCall = AtomicReference<okhttp3.Call?>(null)
+        val escCanceller = EscCanceller { activeCall.get()?.cancel() }
+        val watcherThread = escCanceller.start()
         try {
             val messages = buildMessages(userInput)
             requestBody = json.encodeToString(ChatRequest(session.currentModel.apiModelId, messages))
@@ -38,7 +42,9 @@ internal class ArchitectClient(
                 .post(requestBody.toRequestBody("application/json".toMediaType()))
                 .build()
 
-            val response = http.newCall(request).execute()
+            val call = http.newCall(request)
+            activeCall.set(call)
+            val response = call.execute()
             val body = response.body?.string() ?: ""
             val reqHeaders = request.headers.toMap()
             val resHeaders = response.headers.toMap()
@@ -74,7 +80,9 @@ internal class ArchitectClient(
             }
 
             session.addLogEntry(LogEntry(userInput, requestBody, json.encodeToString(architectResponse)))
-            if (session.shouldTriggerProfile()) ProfileAgent(session).update()
+            if (session.shouldTriggerProfile()) Thread {
+                ProfileAgent(session).update()
+            }.apply { isDaemon = true }.start()
 
             architectResponse.decision?.takeIf { it.isNotBlank() }?.let {
                 onboarding.appendDecision(it)
@@ -89,7 +97,14 @@ internal class ArchitectClient(
 
         } catch (e: Exception) {
             spinner.stop()
+            if (escCanceller.wasCancelled) {
+                println("\n${Colors.LIGHT_YELLOW}Отменено.${Colors.RESET}")
+                return
+            }
             println("Error: ${e.message}")
+        } finally {
+            escCanceller.stop()
+            watcherThread.join(300)
         }
     }
 

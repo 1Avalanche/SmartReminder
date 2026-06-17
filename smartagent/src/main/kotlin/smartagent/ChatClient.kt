@@ -6,6 +6,7 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicReference
 
 internal class ChatClient(private val session: ChatSession) {
     private val http = OkHttpClient.Builder()
@@ -23,6 +24,9 @@ internal class ChatClient(private val session: ChatSession) {
 
         val spinner = Spinner()
         var requestBody = ""
+        val activeCall = AtomicReference<okhttp3.Call?>(null)
+        val escCanceller = EscCanceller { activeCall.get()?.cancel() }
+        val watcherThread = escCanceller.start()
         try {
             val fileContextContent = session.buildFileContextMessages().firstOrNull()?.content ?: ""
             val estimatedChars = session.currentSystemPrompt.length +
@@ -42,7 +46,9 @@ internal class ChatClient(private val session: ChatSession) {
                 }
                 requestBody = json.encodeToString(ChatRequest(session.currentModel.apiModelId, fullMessages))
                 val request = buildRequest(requestBody, apiKey)
-                val response = http.newCall(request).execute()
+                val call = http.newCall(request)
+                activeCall.set(call)
+                val response = call.execute()
 
                 val body = response.body?.string() ?: ""
                 val reqHeaders = request.headers.toMap()
@@ -86,15 +92,24 @@ internal class ChatClient(private val session: ChatSession) {
                         session.updateLastPromptTokens(usage.prompt_tokens)
                     }
                     session.addLogEntry(LogEntry(text, requestBody, responseForLog))
-                    if (session.shouldTriggerProfile()) ProfileAgent(session).update()
+                    if (session.shouldTriggerProfile()) Thread {
+                        ProfileAgent(session).update()
+                    }.apply { isDaemon = true }.start()
                 }
                 break
             }
         } catch (e: Exception) {
             spinner.stop()
+            if (escCanceller.wasCancelled) {
+                println("\n${Colors.LIGHT_YELLOW}Отменено.${Colors.RESET}")
+                return
+            }
             NetworkLogger.log(session.currentModel.url, emptyMap(), requestBody, 0, emptyMap(), "Error: ${e.message}", "[MAIN_AGENT]")
             println("Error: ${e.message}")
             session.addLogEntry(LogEntry(text, requestBody, "Error: ${e.message}"))
+        } finally {
+            escCanceller.stop()
+            watcherThread.join(300)
         }
     }
 

@@ -48,7 +48,6 @@ internal class ProfileAgent(private val session: ChatSession) {
             .post(requestBody.toRequestBody("application/json".toMediaType()))
             .build()
 
-        val spinner = Spinner()
         runCatching {
             val response = http.newCall(request).execute()
             val body = response.body?.string() ?: ""
@@ -61,7 +60,6 @@ internal class ProfileAgent(private val session: ChatSession) {
                 resBody = body,
                 source = "[PROFILE_AGENT]"
             )
-            spinner.stop()
             if (response.isSuccessful) {
                 val chatResponse = json.decodeFromString<ChatResponse>(body)
                 val updatedProfile = chatResponse.choices.firstOrNull()?.message?.content?.trim() ?: return
@@ -69,7 +67,7 @@ internal class ProfileAgent(private val session: ChatSession) {
                     session.saveUserProfile(updatedProfile)
                 }
             }
-        }.onFailure { spinner.stop() }
+        }
     }
 
     private fun loadSystemPrompt(): String {
