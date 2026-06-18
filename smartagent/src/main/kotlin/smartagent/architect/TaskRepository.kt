@@ -8,8 +8,9 @@ import java.time.format.DateTimeFormatter
 
 private val taskJson = Json { prettyPrint = true; ignoreUnknownKeys = true; encodeDefaults = true }
 
-internal class TaskRepository {
-    private val baseDir: File = if (File("smartagent").isDirectory) File("smartagent") else File(".")
+internal class TaskRepository(
+    baseDir: File = if (File("smartagent").isDirectory) File("smartagent") else File(".")
+) {
     private val tasksDir: File = File(baseDir, "architect/tasks")
 
     init {

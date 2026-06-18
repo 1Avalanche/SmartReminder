@@ -8,6 +8,7 @@ plugins {
 dependencies {
     implementation(libs.okhttp)
     implementation(libs.kotlinx.serialization.json)
+    testImplementation(libs.kotlin.testJunit)
 }
 
 kotlin {

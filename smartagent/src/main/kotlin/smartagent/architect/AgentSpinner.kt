@@ -26,4 +26,9 @@ internal object AgentSpinner {
             ?: "Думаю..."
         return Spinner("${Colors.DARK_GRAY}$msg${Colors.RESET}")
     }
+
+    fun startResume(stage: Stage): Spinner {
+        val msg = stageMessages[stage] ?: "Восстанавливаю контекст..."
+        return Spinner("${Colors.DARK_GRAY}$msg${Colors.RESET}")
+    }
 }

@@ -35,10 +35,11 @@ fun main(args: Array<String>) {
     val architectClient = ArchitectClient(session, architectOnboarding)
     val featureRepository = FeatureRepository()
     val taskRepository = TaskRepository()
-    val intentClassifier = IntentClassifier(session, featureRepository, taskRepository)
-    val planningAgent = PlanningAgent(session, taskRepository)
-    val executionAgent = ExecutionAgent(session, taskRepository)
-    val validationAgent = ValidationAgent(session, taskRepository)
+    val gateway = OkHttpLLMGateway()
+    val intentClassifier = IntentClassifier(session.config, featureRepository, taskRepository, gateway)
+    val planningAgent = PlanningAgent(session.config, session.tokens, taskRepository, gateway)
+    val executionAgent = ExecutionAgent(session.config, session.tokens, taskRepository, gateway)
+    val validationAgent = ValidationAgent(session.config, session.tokens, taskRepository, gateway)
     val featureOrchestrator = FeatureOrchestrator(featureRepository, taskRepository, intentClassifier, planningAgent, executionAgent, validationAgent)
 
     if (session.currentMode == AgentMode.ARCHITECT) {

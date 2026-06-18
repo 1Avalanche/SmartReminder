@@ -8,9 +8,9 @@ import java.time.format.DateTimeFormatter
 
 private val featureJson = Json { prettyPrint = true; ignoreUnknownKeys = true; encodeDefaults = true }
 
-internal class FeatureRepository {
-
-    private val baseDir: File = if (File("smartagent").isDirectory) File("smartagent") else File(".")
+internal class FeatureRepository(
+    baseDir: File = if (File("smartagent").isDirectory) File("smartagent") else File(".")
+) {
     private val featuresDir: File = File(baseDir, "architect/features")
     private val activeFeatureFile: File = File(baseDir, "architect/active_feature.txt")
 

@@ -125,6 +125,15 @@ internal class FeatureOrchestrator(
     private fun handleSwitchFeature(intentResult: IntentResult): Boolean {
         val targetId = intentResult.featureId ?: return true
         val prevActive = featureRepository.getActiveFeature()
+
+        if (prevActive != null) {
+            val prevTask = taskRepository.getActiveTaskForFeature(prevActive.id)
+            if (prevTask != null) {
+                taskRepository.pauseTask(prevTask.id)
+                NetworkLogger.logEvent("[FSM]", "PAUSE_TASK: ${prevTask.id} | ${prevTask.title}")
+            }
+        }
+
         featureRepository.setActiveFeature(targetId)
         val newActive = featureRepository.getActiveFeature() ?: return true
 
@@ -135,10 +144,25 @@ internal class FeatureOrchestrator(
 
         println()
         println("${Colors.LIGHT_YELLOW}Переключились на: ${newActive.title}${Colors.RESET}")
-        val currentTask = taskRepository.getActiveTaskForFeature(newActive.id)
-        if (currentTask != null) {
-            println("${Colors.DARK_GRAY}Продолжаем: ${currentTask.title} | ${currentTask.stage.displayName()}${Colors.RESET}")
+
+        val pausedTask = taskRepository.getTasksForFeature(newActive.id)
+            .filter { it.status == TaskStatus.PAUSED }
+            .maxByOrNull { it.updatedAt }
+
+        if (pausedTask != null) {
+            taskRepository.activateTask(pausedTask.id)
+            NetworkLogger.logEvent("[FSM]", "RESUME_TASK: ${pausedTask.id} | ${pausedTask.title}")
+            println("${Colors.LIGHT_VIOLET}Вернемся к задаче: ${pausedTask.title}${Colors.RESET}")
+            val resumeSpinner = AgentSpinner.startResume(pausedTask.stage)
+            Thread.sleep(1500)
+            resumeSpinner.stop()
+        } else {
+            val activeTask = taskRepository.getActiveTaskForFeature(newActive.id)
+            if (activeTask != null) {
+                println("${Colors.DARK_GRAY}Продолжаем: ${activeTask.title} | ${activeTask.stage.displayName()}${Colors.RESET}")
+            }
         }
+
         println()
         return true
     }

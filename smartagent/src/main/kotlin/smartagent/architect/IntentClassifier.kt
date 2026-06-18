@@ -1,20 +1,11 @@
 package smartagent.architect
 
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.encodeToString
-import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.OkHttpClient
-import okhttp3.Request
-import okhttp3.RequestBody.Companion.toRequestBody
-import smartagent.ChatRequest
-import smartagent.ChatResponse
-import smartagent.ChatSession
-import smartagent.Config
+import smartagent.LLMGateway
 import smartagent.Message
-import smartagent.NetworkLogger
+import smartagent.SessionConfig
 import smartagent.json
 import java.io.File
-import java.util.concurrent.TimeUnit
 
 @Serializable
 enum class UserIntent {
@@ -36,16 +27,11 @@ data class IntentResult(
 )
 
 internal class IntentClassifier(
-    private val session: ChatSession,
+    private val config: SessionConfig,
     private val featureRepository: FeatureRepository,
-    private val taskRepository: TaskRepository
+    private val taskRepository: TaskRepository,
+    private val gateway: LLMGateway
 ) {
-    private val http = OkHttpClient.Builder()
-        .connectTimeout(30, TimeUnit.SECONDS)
-        .readTimeout(60, TimeUnit.SECONDS)
-        .writeTimeout(30, TimeUnit.SECONDS)
-        .build()
-
     private val promptDir: File = listOf(
         "smartagent/src/main/kotlin/prompts/architect",
         "src/main/kotlin/prompts/architect",
@@ -53,45 +39,12 @@ internal class IntentClassifier(
     ).map(::File).firstOrNull { it.isDirectory } ?: File("smartagent/src/main/kotlin/prompts/architect")
 
     fun classify(userInput: String): IntentResult? {
-        val apiKey = Config.apiKey(session.currentModel) ?: return null
-        val systemPrompt = loadSystemPrompt()
-        val userContent = buildContext(userInput)
-
         val messages = listOf(
-            Message("system", systemPrompt),
-            Message("user", userContent)
+            Message("system", loadSystemPrompt()),
+            Message("user", buildContext(userInput))
         )
-        val requestBody = json.encodeToString(ChatRequest(session.currentModel.apiModelId, messages))
-
-        val request = Request.Builder()
-            .url(session.currentModel.url)
-            .addHeader("Authorization", "Bearer $apiKey")
-            .addHeader("Content-Type", "application/json")
-            .post(requestBody.toRequestBody("application/json".toMediaType()))
-            .build()
-
-        return runCatching {
-            val startMs = System.currentTimeMillis()
-            val response = http.newCall(request).execute()
-            val durationMs = System.currentTimeMillis() - startMs
-            val body = response.body?.string() ?: ""
-            val chatResponse = runCatching { json.decodeFromString<ChatResponse>(body) }.getOrNull()
-            NetworkLogger.logRequest(
-                source = "[IntentClassifier]",
-                url = session.currentModel.url,
-                reqHeaders = request.headers.toMap(),
-                reqBody = requestBody,
-                statusCode = response.code,
-                resHeaders = response.headers.toMap(),
-                resBody = body,
-                durationMs = durationMs,
-                usage = chatResponse?.usage
-            )
-            if (!response.isSuccessful) return@runCatching null
-            val raw = chatResponse?.choices?.firstOrNull()?.message?.content?.trim()
-                ?: return@runCatching null
-            parseResult(raw)
-        }.getOrNull()
+        val response = gateway.chat(messages, config.currentModel, "[IntentClassifier]") ?: return null
+        return parseResult(response.content)
     }
 
     private fun buildContext(userInput: String): String = buildString {
@@ -146,10 +99,6 @@ internal class IntentClassifier(
     private fun loadSystemPrompt(): String =
         runCatching { File(promptDir, "intent_classifier.txt").readText() }
             .getOrElse { FALLBACK_PROMPT }
-}
-
-private fun okhttp3.Headers.toMap(): Map<String, String> = buildMap {
-    forEach { (name, value) -> put(name, value) }
 }
 
 private val FALLBACK_PROMPT = """
