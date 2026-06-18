@@ -7,6 +7,7 @@ import smartagent.architect.FeatureOrchestrator
 import smartagent.architect.FeatureRepository
 import smartagent.architect.FeatureStatus
 import smartagent.architect.IntentClassifier
+import smartagent.architect.InvariantAgent
 import smartagent.architect.PlanningAgent
 import smartagent.architect.Stage
 import smartagent.architect.TaskRepository
@@ -32,15 +33,16 @@ fun main(args: Array<String>) {
 
     val client = ChatClient(session)
     val architectOnboarding = ArchitectOnboarding()
-    val architectClient = ArchitectClient(session, architectOnboarding)
     val featureRepository = FeatureRepository()
     val taskRepository = TaskRepository()
     val gateway = OkHttpLLMGateway()
+    val invariantAgent = InvariantAgent(session.config, session.tokens, gateway)
+    val architectClient = ArchitectClient(session, architectOnboarding, invariantAgent)
     val intentClassifier = IntentClassifier(session.config, featureRepository, taskRepository, gateway)
-    val planningAgent = PlanningAgent(session.config, session.tokens, taskRepository, gateway)
+    val planningAgent = PlanningAgent(session.config, session.tokens, taskRepository, gateway, invariantAgent)
     val executionAgent = ExecutionAgent(session.config, session.tokens, taskRepository, gateway)
-    val validationAgent = ValidationAgent(session.config, session.tokens, taskRepository, gateway)
-    val featureOrchestrator = FeatureOrchestrator(featureRepository, taskRepository, intentClassifier, planningAgent, executionAgent, validationAgent)
+    val validationAgent = ValidationAgent(session.config, session.tokens, taskRepository, gateway, invariantAgent)
+    val featureOrchestrator = FeatureOrchestrator(featureRepository, taskRepository, intentClassifier, planningAgent, executionAgent, validationAgent, invariantAgent)
 
     if (session.currentMode == AgentMode.ARCHITECT) {
         println("${Colors.DARK_GRAY}Model: ${session.currentModel.shortName} | Mode: ${session.currentMode.displayName}")
@@ -52,7 +54,7 @@ fun main(args: Array<String>) {
         println("Type /help for commands, /exit to quit.${Colors.RESET}\n")
     }
 
-    runRepl(session, client, architectOnboarding, architectClient, featureRepository, taskRepository, intentClassifier, featureOrchestrator)
+    runRepl(session, client, architectOnboarding, architectClient, featureRepository, taskRepository, intentClassifier, featureOrchestrator, invariantAgent)
 }
 
 private data class ParsedArgs(
@@ -82,7 +84,8 @@ private fun runRepl(
     featureRepository: FeatureRepository,
     taskRepository: TaskRepository,
     intentClassifier: IntentClassifier,
-    featureOrchestrator: FeatureOrchestrator
+    featureOrchestrator: FeatureOrchestrator,
+    invariantAgent: InvariantAgent
 ) {
     while (true) {
         print("${Colors.BRIGHT_WHITE}> ")
@@ -111,6 +114,7 @@ private fun runRepl(
                     architectOnboarding.clearAll(session)
                     featureRepository.clearAll()
                     taskRepository.clearAll()
+                    invariantAgent.clearUserInvariants()
                     session.clear()
                     println("${Colors.LIGHT_YELLOW}Все данные проекта очищены.${Colors.RESET}")
                 } else {
@@ -152,6 +156,8 @@ private fun runRepl(
             input == "/feature pause" -> pauseActiveFeature(featureRepository)
             input == "/feature resume" -> resumeActiveFeature(featureRepository)
             input == "/feature info" -> showFeatureInfo(featureRepository, taskRepository)
+            // Invariant commands
+            input == "/invariants" -> showUserInvariants(invariantAgent)
             // Status and diagnostic commands
             input == "/status" -> showStatus(featureRepository, taskRepository)
             input.startsWith("/classify ") -> classifyDiagnostic(intentClassifier, input.removePrefix("/classify ").trim())
@@ -602,6 +608,19 @@ private fun showFeatureInfo(repo: FeatureRepository, taskRepo: TaskRepository) {
             val marker = if (t.status == TaskStatus.COMPLETED) "✓" else "→"
             println("${Colors.LIGHT_GRAY}  $marker ${t.title} | ${t.stage.displayName()}${Colors.RESET}")
         }
+    }
+    println()
+}
+
+// ─── Invariants ───────────────────────────────────────────────────────────────
+
+private fun showUserInvariants(invariantAgent: InvariantAgent) {
+    val text = invariantAgent.getUserInvariants()
+    if (text.isEmpty()) {
+        println("${Colors.DARK_GRAY}Пользовательские инварианты не заданы.${Colors.RESET}")
+    } else {
+        println("${Colors.LIGHT_YELLOW}Пользовательские инварианты:${Colors.RESET}")
+        println(text)
     }
     println()
 }

@@ -23,7 +23,8 @@ internal class ValidationAgent(
     private val config: SessionConfig,
     private val tokens: TokenTracker,
     private val taskRepository: TaskRepository,
-    private val gateway: LLMGateway
+    private val gateway: LLMGateway,
+    private val invariantAgent: InvariantAgent
 ) {
     private val promptDir: File = listOf(
         "smartagent/src/main/kotlin/prompts/architect",
@@ -133,9 +134,13 @@ internal class ValidationAgent(
         return null
     }
 
-    private fun loadSystemPrompt(): String =
-        runCatching { File(promptDir, "validation_agent.txt").readText() }
+    private fun loadSystemPrompt(): String {
+        val base = runCatching { File(promptDir, "validation_agent.txt").readText() }
             .getOrElse { FALLBACK_PROMPT }
+        val invariants = invariantAgent.getAllInvariants()
+        if (invariants.isEmpty()) return base
+        return "$base\n\nЗАПРЕТЫ — ВСЁ ПЕРЕЧИСЛЕННОЕ ЗАПРЕЩЕНО К ИСПОЛЬЗОВАНИЮ В АРХИТЕКТУРЕ:\n$invariants"
+    }
 }
 
 private val FALLBACK_PROMPT = """

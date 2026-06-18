@@ -23,7 +23,8 @@ internal class PlanningAgent(
     private val config: SessionConfig,
     private val tokens: TokenTracker,
     private val taskRepository: TaskRepository,
-    private val gateway: LLMGateway
+    private val gateway: LLMGateway,
+    private val invariantAgent: InvariantAgent
 ) {
     private val promptDir: File = listOf(
         "smartagent/src/main/kotlin/prompts/architect",
@@ -32,15 +33,23 @@ internal class PlanningAgent(
     ).map(::File).firstOrNull { it.isDirectory } ?: File("smartagent/src/main/kotlin/prompts/architect")
 
     fun run(feature: Feature, task: Task, userInput: String): PlanningAgentResponse? {
+        val parsed = fetch(feature, task, userInput) ?: return null
+        apply(task, parsed)
+        return parsed
+    }
+
+    fun fetch(feature: Feature, task: Task, userInput: String): PlanningAgentResponse? {
         val messages = listOf(
             Message("system", loadSystemPrompt()),
             Message("user", buildContext(feature, task, userInput))
         )
         val response = gateway.chat(messages, config.currentModel, "[PlanningAgent]") ?: return null
         response.usage?.let { tokens.addTokenEntry(it) }
-        val parsed = parseResponse(response.content) ?: return null
-        applyToTask(task, parsed)
-        return parsed
+        return parseResponse(response.content)
+    }
+
+    fun apply(task: Task, agentResponse: PlanningAgentResponse) {
+        applyToTask(task, agentResponse)
     }
 
     private fun applyToTask(task: Task, agentResponse: PlanningAgentResponse) {
@@ -104,9 +113,13 @@ internal class PlanningAgent(
         return null
     }
 
-    private fun loadSystemPrompt(): String =
-        runCatching { File(promptDir, "planning_agent.txt").readText() }
+    private fun loadSystemPrompt(): String {
+        val base = runCatching { File(promptDir, "planning_agent.txt").readText() }
             .getOrElse { FALLBACK_PROMPT }
+        val invariants = invariantAgent.getAllInvariants()
+        if (invariants.isEmpty()) return base
+        return "$base\n\nЗАПРЕТЫ — ВСЁ ПЕРЕЧИСЛЕННОЕ ЗАПРЕЩЕНО К ИСПОЛЬЗОВАНИЮ В АРХИТЕКТУРЕ:\n$invariants"
+    }
 }
 
 private val FALLBACK_PROMPT = """

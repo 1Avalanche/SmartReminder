@@ -6,8 +6,8 @@ import smartagent.Spinner
 internal object AgentSpinner {
     private val agentMessages = mapOf(
         "IntentClassifier" to "Думаю...",
-        "PlanningAgent" to "Собираю требования...",
-        "ExecutionAgent" to "Проектирую систему...",
+        "PlanningAgent" to "Планирую...",
+        "ExecutionAgent" to "Проектирую...",
         "ValidationAgent" to "Проверяю архитектуру...",
         "ArchitectClient" to "Обдумываю ответ...",
         "SummaryAgent" to "Сжимаю контекст...",

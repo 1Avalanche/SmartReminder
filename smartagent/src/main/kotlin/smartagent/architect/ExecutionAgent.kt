@@ -31,15 +31,23 @@ internal class ExecutionAgent(
     ).map(::File).firstOrNull { it.isDirectory } ?: File("smartagent/src/main/kotlin/prompts/architect")
 
     fun run(feature: Feature, task: Task, userInput: String): ExecutionAgentResponse? {
+        val parsed = fetch(feature, task, userInput) ?: return null
+        apply(task, parsed)
+        return parsed
+    }
+
+    fun fetch(feature: Feature, task: Task, userInput: String): ExecutionAgentResponse? {
         val messages = listOf(
             Message("system", loadSystemPrompt()),
             Message("user", buildContext(feature, task, userInput))
         )
         val response = gateway.chat(messages, config.currentModel, "[ExecutionAgent]") ?: return null
         response.usage?.let { tokens.addTokenEntry(it) }
-        val parsed = parseResponse(response.content) ?: return null
-        applyToTask(task, parsed)
-        return parsed
+        return parseResponse(response.content)
+    }
+
+    fun apply(task: Task, agentResponse: ExecutionAgentResponse) {
+        applyToTask(task, agentResponse)
     }
 
     private fun applyToTask(task: Task, agentResponse: ExecutionAgentResponse) {

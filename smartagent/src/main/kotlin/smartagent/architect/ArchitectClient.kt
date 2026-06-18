@@ -25,7 +25,8 @@ import java.util.concurrent.atomic.AtomicReference
 
 internal class ArchitectClient(
     private val session: ChatSession,
-    private val onboarding: ArchitectOnboarding
+    private val onboarding: ArchitectOnboarding,
+    private val invariantAgent: InvariantAgent
 ) {
     private val http = OkHttpClient.Builder()
         .connectTimeout(60, TimeUnit.SECONDS)
@@ -123,7 +124,11 @@ internal class ArchitectClient(
     }
 
     private fun buildMessages(userInput: String): List<Message> = buildList {
-        add(Message("system", onboarding.buildSystemPrompt()))
+        val baseSystemPrompt = onboarding.buildSystemPrompt()
+        val invariants = invariantAgent.getAllInvariants()
+        val systemPrompt = if (invariants.isEmpty()) baseSystemPrompt
+            else "$baseSystemPrompt\n\nЗАПРЕТЫ — ВСЁ ПЕРЕЧИСЛЕННОЕ ЗАПРЕЩЕНО К ИСПОЛЬЗОВАНИЮ В АРХИТЕКТУРЕ:\n$invariants"
+        add(Message("system", systemPrompt))
 
         val assistantContext = buildString {
             val historyText = buildHistoryText()

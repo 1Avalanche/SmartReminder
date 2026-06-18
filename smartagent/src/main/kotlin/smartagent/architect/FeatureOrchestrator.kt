@@ -9,9 +9,37 @@ internal class FeatureOrchestrator(
     private val intentClassifier: IntentClassifier,
     private val planningAgent: PlanningAgent,
     private val executionAgent: ExecutionAgent,
-    private val validationAgent: ValidationAgent
+    private val validationAgent: ValidationAgent,
+    private val invariantAgent: InvariantAgent
 ) {
     fun process(userInput: String): Boolean {
+        val invariantSpinner = AgentSpinner.start("InvariantAgent")
+        val invariantResult = invariantAgent.check(userInput)
+        invariantSpinner.stop()
+
+        when (invariantResult.status) {
+            InvariantStatus.INVALID -> {
+                println()
+                println("${Colors.LIGHT_YELLOW}Запрос отклонён: ${invariantResult.reason}${Colors.RESET}")
+                println()
+                val activeTask = featureRepository.getActiveFeature()
+                    ?.let { taskRepository.getActiveTaskForFeature(it.id) }
+                if (activeTask != null) {
+                    taskRepository.appendHistory(activeTask.id, userInput, role = "User")
+                    taskRepository.appendHistory(activeTask.id, "Запрос отклонён: ${invariantResult.reason}", role = "InvariantAgent")
+                }
+                return false
+            }
+            InvariantStatus.NEW_INVARIANT -> {
+                invariantAgent.saveUserInvariant(invariantResult.invariant)
+                println()
+                println("${Colors.LIGHT_GREEN}Инвариант зафиксирован: ${invariantResult.invariant}${Colors.RESET}")
+                println()
+                return false
+            }
+            InvariantStatus.VALID -> Unit
+        }
+
         val intentSpinner = AgentSpinner.start("IntentClassifier")
         val intentResult = intentClassifier.classify(userInput)
         intentSpinner.stop()
@@ -33,9 +61,32 @@ internal class FeatureOrchestrator(
     private fun dispatchToAgent(feature: Feature, task: Task, userInput: String): Boolean {
         return when (task.stage) {
             Stage.PLANNING -> {
-                val spinner = AgentSpinner.start("PlanningAgent", task.stage)
-                val agentResponse = planningAgent.run(feature, task, userInput)
-                spinner.stop()
+                var injectedInput = userInput
+                var agentResponse: PlanningAgentResponse? = null
+                for (attempt in 1..MAX_INVARIANT_RETRIES) {
+                    val spinner = AgentSpinner.start("PlanningAgent", task.stage)
+                    val fetched = planningAgent.fetch(feature, task, injectedInput)
+                    spinner.stop()
+                    fetched ?: return true
+
+                    val invariantSpinner = AgentSpinner.start("InvariantAgent")
+                    val invariantResult = invariantAgent.check(fetched.response)
+                    invariantSpinner.stop()
+
+                    if (invariantResult.status == InvariantStatus.INVALID) {
+                        if (attempt == MAX_INVARIANT_RETRIES) {
+                            println()
+                            println("${Colors.LIGHT_YELLOW}PlanningAgent не смог выполнить запрос без нарушения инвариантов: ${invariantResult.reason}${Colors.RESET}")
+                            println()
+                            return false
+                        }
+                        injectedInput = "[INVARIANT VIOLATION] ${invariantResult.reason}\n\nОригинальный запрос: $userInput"
+                    } else {
+                        planningAgent.apply(task, fetched)
+                        agentResponse = fetched
+                        break
+                    }
+                }
                 agentResponse ?: return true
                 if (agentResponse.response.isNotBlank()) {
                     println()
@@ -49,9 +100,32 @@ internal class FeatureOrchestrator(
                 false
             }
             Stage.EXECUTION -> {
-                val spinner = AgentSpinner.start("ExecutionAgent", task.stage)
-                val agentResponse = executionAgent.run(feature, task, userInput)
-                spinner.stop()
+                var injectedInput = userInput
+                var agentResponse: ExecutionAgentResponse? = null
+                for (attempt in 1..MAX_INVARIANT_RETRIES) {
+                    val spinner = AgentSpinner.start("ExecutionAgent", task.stage)
+                    val fetched = executionAgent.fetch(feature, task, injectedInput)
+                    spinner.stop()
+                    fetched ?: return true
+
+                    val invariantSpinner = AgentSpinner.start("InvariantAgent")
+                    val invariantResult = invariantAgent.check(fetched.response)
+                    invariantSpinner.stop()
+
+                    if (invariantResult.status == InvariantStatus.INVALID) {
+                        if (attempt == MAX_INVARIANT_RETRIES) {
+                            println()
+                            println("${Colors.LIGHT_YELLOW}ExecutionAgent не смог выполнить запрос без нарушения инвариантов: ${invariantResult.reason}${Colors.RESET}")
+                            println()
+                            return false
+                        }
+                        injectedInput = "[INVARIANT VIOLATION] ${invariantResult.reason}\n\nОригинальный запрос: $userInput"
+                    } else {
+                        executionAgent.apply(task, fetched)
+                        agentResponse = fetched
+                        break
+                    }
+                }
                 agentResponse ?: return true
                 if (agentResponse.response.isNotBlank()) {
                     println()
@@ -87,6 +161,7 @@ internal class FeatureOrchestrator(
     companion object {
         private const val AUTO_EXEC = "Начни проектирование на основе утверждённого плана."
         private const val AUTO_VALID = "Проверь созданную архитектуру на полноту и корректность."
+        private const val MAX_INVARIANT_RETRIES = 3
     }
 
     private fun handleNewFeature(userInput: String) {
