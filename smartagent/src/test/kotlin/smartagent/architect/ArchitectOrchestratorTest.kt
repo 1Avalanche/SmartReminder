@@ -46,18 +46,17 @@ class ArchitectOrchestratorTest {
         invGateway: FakeLLMGateway = alwaysValidGateway()
     ): ArchitectOrchestrator {
         val invariantAgent = InvariantAgent(config, tokens, invGateway)
-        val intentClassifier = IntentClassifier(config, featureRepo, taskRepo, mainGateway)
         val planningAgent = PlanningAgent(config, tokens, taskRepo, mainGateway)
         val executionAgent = ExecutionAgent(config, tokens, taskRepo, mainGateway)
         val validationAgent = ValidationAgent(config, tokens, taskRepo, mainGateway)
-        return ArchitectOrchestrator(ChatSession(), featureRepo, taskRepo, invariantAgent, intentClassifier, planningAgent, executionAgent, validationAgent)
+        return ArchitectOrchestrator(ChatSession(), featureRepo, taskRepo, invariantAgent, planningAgent, executionAgent, validationAgent, mainGateway, config, tokens)
     }
 
     @Test
-    fun `process with NEW_FEATURE creates feature and task`() {
-        val intentJson = """{"intent":"NEW_FEATURE","confidence":0.95}"""
+    fun `process with CREATE_TASK creates feature and task`() {
+        val thoughtJson = """{"response":"Создаю задачу по авторизации","action":"CREATE_TASK","taskTitle":"Авторизация","taskDescription":"Спроектировать систему авторизации"}"""
         val planningJson = """{"planningComplete":false,"currentStep":"Сбор","expectedAction":"Уточнить","summary":"","response":"Опишите подробнее"}"""
-        val orchestrator = makeOrchestrator(FakeLLMGateway(intentJson, planningJson))
+        val orchestrator = makeOrchestrator(FakeLLMGateway(thoughtJson, planningJson))
 
         orchestrator.process("добавь авторизацию")
 
@@ -69,9 +68,9 @@ class ArchitectOrchestratorTest {
     }
 
     @Test
-    fun `process with QUESTION and no active feature does not crash`() {
-        val intentJson = """{"intent":"QUESTION","confidence":0.8}"""
-        val orchestrator = makeOrchestrator(FakeLLMGateway(intentJson))
+    fun `process with ANSWER and no active feature does not crash`() {
+        val thoughtJson = """{"response":"SOLID — это пять принципов объектно-ориентированного дизайна.","action":"ANSWER"}"""
+        val orchestrator = makeOrchestrator(FakeLLMGateway(thoughtJson))
 
         orchestrator.process("что такое SOLID?")
 
@@ -79,20 +78,20 @@ class ArchitectOrchestratorTest {
     }
 
     @Test
-    fun `process with SWITCH_FEATURE switches active feature`() {
-        val feature1 = featureRepo.createFeature("Feature One")
-        val feature2 = featureRepo.createFeature("Feature Two")
-        featureRepo.setActiveFeature(feature1.id)
-        taskRepo.createTask(feature1.id, "Task One")
+    fun `process with SWITCH_TASK switches active task`() {
+        val feature = featureRepo.createFeature("My Feature")
+        val task1 = taskRepo.createTask(feature.id, "Task One")
+        val task2 = taskRepo.createTask(feature.id, "Task Two")
+        taskRepo.activateTask(task1.id)
 
-        val intentJson = """{"intent":"SWITCH_FEATURE","featureId":"${feature2.id}","confidence":0.9}"""
-        val orchestrator = makeOrchestrator(FakeLLMGateway(intentJson))
+        val thoughtJson = """{"response":"Переключаюсь на Task Two","action":"SWITCH_TASK","taskTitle":"Task Two"}"""
+        val orchestrator = makeOrchestrator(FakeLLMGateway(thoughtJson))
 
-        orchestrator.process("переключись на Feature Two")
+        orchestrator.process("давай вернёмся к Task Two")
 
-        val active = featureRepo.getActiveFeature()
-        assertNotNull(active)
-        assertEquals(feature2.id, active.id)
+        val activeTask = taskRepo.getActiveTaskForFeature(feature.id)
+        assertNotNull(activeTask)
+        assertEquals(task2.id, activeTask.id)
     }
 
     @Test
@@ -100,9 +99,9 @@ class ArchitectOrchestratorTest {
         val feature = featureRepo.createFeature("My Feature")
         taskRepo.createTask(feature.id, "My Task")
 
-        val intentJson = """{"intent":"TASK_UPDATE","confidence":0.8}"""
+        val thoughtJson = """{"response":"Продолжаем планирование","action":"UPDATE_TASK","taskTitle":"My Task","taskDescription":"Уточнить требования к задаче"}"""
         val planningJson = """{"planningComplete":false,"currentStep":"Шаг 1","expectedAction":"Ответить","summary":"","response":"Нужно больше информации"}"""
-        val mainGateway = FakeLLMGateway(intentJson, planningJson)
+        val mainGateway = FakeLLMGateway(thoughtJson, planningJson)
         val orchestrator = makeOrchestrator(mainGateway)
 
         orchestrator.process("уточняю требования")
@@ -115,10 +114,10 @@ class ArchitectOrchestratorTest {
         val feature = featureRepo.createFeature("My Feature")
         val task = taskRepo.createTask(feature.id, "My Task")
 
-        val intentJson = """{"intent":"TASK_UPDATE","confidence":0.8}"""
+        val thoughtJson = """{"response":"Принято, продолжаем","action":"UPDATE_TASK","taskTitle":"My Task","taskDescription":"Задача ясна"}"""
         val planningJson = """{"planningComplete":true,"currentStep":"Готово","expectedAction":"","summary":"ok","response":"Начинаем","plan":"## Plan"}"""
         val executionJson = """{"executionComplete":false,"currentStep":"Проектирование","expectedAction":"Продолжить","artifact":"","response":"Работаю над архитектурой"}"""
-        val orchestrator = makeOrchestrator(FakeLLMGateway(intentJson, planningJson, executionJson))
+        val orchestrator = makeOrchestrator(FakeLLMGateway(thoughtJson, planningJson, executionJson))
 
         orchestrator.process("всё понятно")
 
@@ -158,9 +157,9 @@ class ArchitectOrchestratorTest {
         val validJson = """{"status":"VALID","reason":"","invariant":""}"""
         val invGateway = FakeLLMGateway(newInvJson, *Array(10) { validJson })
 
-        val intentJson = """{"intent":"TASK_UPDATE","confidence":0.8}"""
+        val thoughtJson = """{"response":"Принято, уточняем архитектуру навигации","action":"UPDATE_TASK","taskTitle":"My Task","taskDescription":"MVI, навигация через готовые библиотеки"}"""
         val planningJson = """{"planningComplete":false,"currentStep":"","expectedAction":"","summary":"","response":"Принято, MVI + готовые библиотеки навигации"}"""
-        val mainGateway = FakeLLMGateway(intentJson, planningJson)
+        val mainGateway = FakeLLMGateway(thoughtJson, planningJson)
 
         val orchestrator = makeOrchestrator(mainGateway, invGateway)
         orchestrator.process("MVI. навигацию лучше через готовые библиотеки")
@@ -176,10 +175,10 @@ class ArchitectOrchestratorTest {
         val task = taskRepo.createTask(feature.id, "My Task")
         taskRepo.updateStage(task.id, Stage.EXECUTION)
 
-        val intentJson = """{"intent":"TASK_UPDATE","confidence":0.8}"""
+        val thoughtJson = """{"response":"Продолжаем выполнение","action":"UPDATE_TASK","taskTitle":"My Task","taskDescription":"Завершить проектирование"}"""
         val executionJson = """{"executionComplete":true,"currentStep":"Готово","expectedAction":"","artifact":"## Architecture","response":"Готово"}"""
         val validationJson = """{"validationPassed":false,"returnToExecution":false,"currentStep":"Проверка","expectedAction":"Уточнить","review":"","response":"Проверяю"}"""
-        val orchestrator = makeOrchestrator(FakeLLMGateway(intentJson, executionJson, validationJson))
+        val orchestrator = makeOrchestrator(FakeLLMGateway(thoughtJson, executionJson, validationJson))
 
         orchestrator.process("готово")
 

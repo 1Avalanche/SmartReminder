@@ -30,16 +30,16 @@ internal class PlanningAgent(
         "prompts/architect"
     ).map(::File).firstOrNull { it.isDirectory } ?: File("smartagent/src/main/kotlin/prompts/architect")
 
-    fun run(feature: Feature, task: Task, userInput: String, invariants: String = ""): PlanningAgentResponse? {
-        val parsed = fetch(feature, task, userInput, invariants) ?: return null
+    fun run(feature: Feature, task: Task, planningContext: PlanningContext, invariants: String = ""): PlanningAgentResponse? {
+        val parsed = fetch(feature, task, planningContext, invariants) ?: return null
         apply(task, parsed)
         return parsed
     }
 
-    fun fetch(feature: Feature, task: Task, userInput: String, invariants: String = ""): PlanningAgentResponse? {
+    fun fetch(feature: Feature, task: Task, planningContext: PlanningContext, invariants: String = ""): PlanningAgentResponse? {
         val messages = listOf(
             Message("system", loadSystemPrompt(invariants)),
-            Message("user", buildContext(feature, task, userInput))
+            Message("user", buildContext(feature, task, planningContext))
         )
         val response = gateway.chat(messages, config.currentModel, "[PlanningAgent]") ?: return null
         response.usage?.let { tokens.addTokenEntry(it) }
@@ -47,10 +47,6 @@ internal class PlanningAgent(
     }
 
     fun apply(task: Task, agentResponse: PlanningAgentResponse) {
-        applyToTask(task, agentResponse)
-    }
-
-    private fun applyToTask(task: Task, agentResponse: PlanningAgentResponse) {
         taskRepository.updateCurrentStep(
             taskId = task.id,
             currentStep = agentResponse.currentStep,
@@ -68,30 +64,31 @@ internal class PlanningAgent(
         taskRepository.appendHistory(task.id, agentResponse.response.orEmpty(), role = "PlanningAgent")
     }
 
-    private fun buildContext(feature: Feature, task: Task, userInput: String): String = buildString {
+    private fun buildContext(feature: Feature, task: Task, planningContext: PlanningContext): String = buildString {
         appendLine("FEATURE")
         appendLine("id: ${feature.id}")
         appendLine("title: ${feature.title}")
-        if (feature.summary.isNotBlank()) appendLine("summary: ${feature.summary}")
+        if (planningContext.featureSummary.isNotBlank()) appendLine("summary: ${planningContext.featureSummary}")
         appendLine()
 
         appendLine("TASK")
         appendLine("id: ${task.id}")
-        appendLine("title: ${task.title}")
+        appendLine("title: ${planningContext.taskTitle}")
         appendLine("stage: ${task.stage}")
-        if (task.summary.isNotBlank()) appendLine("summary: ${task.summary}")
+        appendLine("description: ${planningContext.taskDescription}")
         appendLine()
 
-        val history = taskRepository.getHistory(task.id)
-        if (history.isNotBlank()) {
-            appendLine("CONVERSATION HISTORY")
-            appendLine(history)
+        if (!planningContext.additionalContext.isNullOrBlank()) {
+            appendLine("ADDITIONAL CONTEXT")
+            appendLine(planningContext.additionalContext)
             appendLine()
         }
 
-        appendLine("USER MESSAGE")
-        appendLine()
-        append(userInput)
+        if (planningContext.history.isNotBlank()) {
+            appendLine("CONVERSATION HISTORY")
+            appendLine(planningContext.history)
+            appendLine()
+        }
     }.trimEnd()
 
     private fun parseResponse(raw: String): PlanningAgentResponse? {

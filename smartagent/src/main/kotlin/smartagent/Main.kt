@@ -40,7 +40,7 @@ fun main(args: Array<String>) {
     val planningAgent = PlanningAgent(session.config, session.tokens, taskRepository, gateway)
     val executionAgent = ExecutionAgent(session.config, session.tokens, taskRepository, gateway)
     val validationAgent = ValidationAgent(session.config, session.tokens, taskRepository, gateway)
-    val architectOrchestrator = ArchitectOrchestrator(session, featureRepository, taskRepository, invariantAgent, intentClassifier, planningAgent, executionAgent, validationAgent)
+    val architectOrchestrator = ArchitectOrchestrator(session, featureRepository, taskRepository, invariantAgent, planningAgent, executionAgent, validationAgent, gateway, session.config, session.tokens)
 
     if (session.currentMode == AgentMode.ARCHITECT) {
         println("${Colors.DARK_GRAY}Model: ${session.currentModel.shortName} | Mode: ${session.currentMode.displayName}")

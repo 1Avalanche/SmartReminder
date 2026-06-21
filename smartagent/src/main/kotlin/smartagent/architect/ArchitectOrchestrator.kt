@@ -2,20 +2,34 @@ package smartagent.architect
 
 import smartagent.ChatSession
 import smartagent.Colors
+import smartagent.LLMGateway
 import smartagent.LogEntry
+import smartagent.Message
 import smartagent.NetworkLogger
 import smartagent.ProfileAgent
+import smartagent.SessionConfig
+import smartagent.TokenTracker
+import smartagent.json
+import java.io.File
 
 internal class ArchitectOrchestrator(
     private val session: ChatSession,
     private val featureRepository: FeatureRepository,
     private val taskRepository: TaskRepository,
     private val invariantAgent: InvariantAgent,
-    private val intentClassifier: IntentClassifier,
     private val planningAgent: PlanningAgent,
     private val executionAgent: ExecutionAgent,
-    private val validationAgent: ValidationAgent
+    private val validationAgent: ValidationAgent,
+    private val gateway: LLMGateway,
+    private val config: SessionConfig,
+    private val tokens: TokenTracker
 ) {
+    private val promptDir: File = listOf(
+        "smartagent/src/main/kotlin/prompts/architect",
+        "src/main/kotlin/prompts/architect",
+        "prompts/architect"
+    ).map(::File).firstOrNull { it.isDirectory } ?: File("smartagent/src/main/kotlin/prompts/architect")
+
     fun process(userInput: String) {
         val invSpinner = AgentSpinner.start("InvariantAgent")
         val invariantResult = invariantAgent.check(userInput)
@@ -54,41 +68,215 @@ internal class ArchitectOrchestrator(
     }
 
     private fun route(userInput: String) {
-        val intentSpinner = AgentSpinner.start("IntentClassifier")
-        val intentResult = intentClassifier.classify(userInput)
-        intentSpinner.stop()
+        val thinkSpinner = AgentSpinner.start("ArchitectOrchestrator")
+        val thought = think(userInput)
+        thinkSpinner.stop()
 
-        when (intentResult?.intent) {
-            UserIntent.NEW_FEATURE -> handleNewFeature(userInput)
-            UserIntent.NEW_TASK -> handleNewTask(userInput)
-            UserIntent.SWITCH_FEATURE -> { handleSwitchFeature(intentResult); return }
-            UserIntent.TASK_UPDATE -> handleTaskUpdate(userInput, intentResult)
-            else -> handleDefault(userInput)
+        if (thought == null) {
+            println()
+            println("${Colors.LIGHT_YELLOW}Не удалось получить ответ. Попробуйте повторить.${Colors.RESET}")
+            println()
+            return
         }
 
+        // Suppress arch response during active PLANNING dialogue — PlanningAgent owns that conversation
         val activeFeature = featureRepository.getActiveFeature()
-        if (activeFeature == null) {
+        val activeTask = activeFeature?.let { taskRepository.getActiveTaskForFeature(it.id) }
+        val silentRoute = thought.action == ArchitectAction.UPDATE_TASK && activeTask?.stage == Stage.PLANNING
+
+        if (!silentRoute) {
+            println()
+            println("${Colors.LIGHT_VIOLET}${thought.response}${Colors.RESET}")
+            println()
+        }
+
+        when (thought.action) {
+            ArchitectAction.ANSWER -> Unit
+            ArchitectAction.CREATE_TASK -> handleCreateTask(thought)
+            ArchitectAction.UPDATE_TASK -> handleUpdateTask(thought, userInput)
+            ArchitectAction.SWITCH_TASK -> handleSwitchTask(thought)
+        }
+    }
+
+    private fun think(userInput: String): ArchitectThought? {
+        val messages = listOf(
+            Message("system", loadSystemPrompt()),
+            Message("user", buildThinkingContext(userInput))
+        )
+        val response = gateway.chat(messages, config.currentModel, "[ArchitectOrchestrator]") ?: return null
+        response.usage?.let { tokens.addTokenEntry(it) }
+        return parseThought(response.content)
+    }
+
+    private fun buildThinkingContext(userInput: String): String = buildString {
+        val feature = featureRepository.getActiveFeature()
+        if (feature != null) {
+            appendLine("ACTIVE FEATURE")
+            appendLine("id: ${feature.id} | title: ${feature.title}")
+            if (feature.summary.isNotBlank()) appendLine("summary: ${feature.summary}")
+            appendLine()
+
+            val tasks = taskRepository.getTasksForFeature(feature.id)
+                .filter { it.status != TaskStatus.COMPLETED }
+            if (tasks.isNotEmpty()) {
+                appendLine("OPEN TASKS")
+                tasks.forEach { t ->
+                    val marker = if (t.status == TaskStatus.ACTIVE) " [ACTIVE]" else ""
+                    appendLine("${t.id} | ${t.title}$marker | stage: ${t.stage}")
+                    if (t.summary.isNotBlank()) appendLine("  summary: ${t.summary}")
+                }
+                appendLine()
+            } else {
+                appendLine("OPEN TASKS: нет")
+                appendLine()
+            }
+
+            val activeTask = taskRepository.getActiveTaskForFeature(feature.id)
+            if (activeTask != null) {
+                val history = taskRepository.getHistory(activeTask.id)
+                if (history.isNotBlank()) {
+                    appendLine("ACTIVE TASK HISTORY")
+                    appendLine(history)
+                    appendLine()
+                }
+            }
+        } else {
+            appendLine("ACTIVE FEATURE: none")
+            appendLine()
+        }
+
+        val archSettings = loadArchSettings()
+        if (archSettings.isNotBlank()) {
+            appendLine("ARCH SETTINGS")
+            appendLine(archSettings)
+            appendLine()
+        }
+
+        val invariants = invariantAgent.getAllInvariants()
+        if (invariants.isNotBlank()) {
+            appendLine("INVARIANTS")
+            appendLine(invariants)
+            appendLine()
+        }
+
+        val profile = loadUserProfile()
+        if (profile.isNotBlank()) {
+            appendLine("USER PROFILE")
+            appendLine(profile)
+            appendLine()
+        }
+
+        appendLine("USER MESSAGE")
+        appendLine()
+        append(userInput)
+    }.trimEnd()
+
+    private fun handleCreateTask(thought: ArchitectThought) {
+        val feature = featureRepository.getActiveFeature()
+            ?: featureRepository.createFeature(thought.taskTitle ?: "Новый проект")
+
+        val task = taskRepository.createTask(feature.id, thought.taskTitle ?: "Новая задача")
+
+        thought.taskDescription?.takeIf { it.isNotBlank() }?.let { desc ->
+            taskRepository.updateTask(task.copy(summary = desc))
+        }
+
+        taskRepository.appendHistory(task.id, thought.response, role = "ArchitectOrchestrator")
+        NetworkLogger.logEvent("[ArchitectOrchestrator]", "CREATE_TASK: ${task.id} | featureId=${feature.id} | ${task.title}")
+
+        val freshTask = taskRepository.getTask(task.id) ?: return
+        val planningContext = PlanningContext(
+            taskTitle = freshTask.title,
+            taskDescription = thought.taskDescription ?: freshTask.title,
+            additionalContext = thought.additionalContext,
+            history = taskRepository.getHistory(freshTask.id),
+            featureSummary = feature.summary
+        )
+
+        dispatchToAgent(feature, freshTask, planningContext = planningContext)
+    }
+
+    private fun handleUpdateTask(thought: ArchitectThought, userInput: String) {
+        val feature = featureRepository.getActiveFeature() ?: run {
             println()
             println("${Colors.DARK_GRAY}Нет активного проекта. Опишите задачу или создайте проект: /feature create <название>${Colors.RESET}")
             println()
             return
         }
-
-        val activeTask = taskRepository.getActiveTaskForFeature(activeFeature.id)
-        if (activeTask == null) {
+        val task = taskRepository.getActiveTaskForFeature(feature.id) ?: run {
             println()
             println("${Colors.DARK_GRAY}Нет активной задачи. Опишите задачу в чате.${Colors.RESET}")
             println()
             return
         }
 
-        dispatchToAgent(activeFeature, activeTask, userInput)
+        taskRepository.appendHistory(task.id, userInput, role = "User")
+
+        val inPlanning = task.stage == Stage.PLANNING
+        // Don't add arch response to history during PLANNING — keeps PlanningAgent's Q&A clean
+        if (!inPlanning) {
+            taskRepository.appendHistory(task.id, thought.response, role = "ArchitectOrchestrator")
+        }
+
+        val freshTask = taskRepository.getTask(task.id) ?: return
+        val planningContext = PlanningContext(
+            taskTitle = freshTask.title,
+            // During PLANNING: use PlanningAgent's accumulated summary, not arch's re-interpretation
+            taskDescription = if (inPlanning) freshTask.summary
+                              else (thought.taskDescription?.takeIf { it.isNotBlank() } ?: freshTask.summary),
+            additionalContext = if (inPlanning) null else thought.additionalContext,
+            history = taskRepository.getHistory(freshTask.id),
+            featureSummary = feature.summary
+        )
+
+        dispatchToAgent(feature, freshTask, userInput = userInput, planningContext = planningContext)
     }
 
-    private fun dispatchToAgent(feature: Feature, task: Task, userInput: String) {
+    private fun handleSwitchTask(thought: ArchitectThought) {
+        val feature = featureRepository.getActiveFeature() ?: return
+        val targetTitle = thought.taskTitle ?: return
+
+        val target = taskRepository.getTasksForFeature(feature.id)
+            .filter { it.status != TaskStatus.COMPLETED }
+            .firstOrNull { it.title.equals(targetTitle, ignoreCase = true) }
+            ?: taskRepository.getTasksForFeature(feature.id)
+                .filter { it.status != TaskStatus.COMPLETED }
+                .firstOrNull { it.title.contains(targetTitle, ignoreCase = true) }
+
+        if (target == null) {
+            println()
+            println("${Colors.LIGHT_YELLOW}Задача не найдена: $targetTitle${Colors.RESET}")
+            println()
+            return
+        }
+
+        val current = taskRepository.getActiveTaskForFeature(feature.id)
+        if (current?.id != target.id) {
+            current?.let { taskRepository.pauseTask(it.id) }
+            taskRepository.activateTask(target.id)
+            NetworkLogger.logEvent("[ArchitectOrchestrator]", "SWITCH_TASK: ${current?.id ?: "none"} → ${target.id} | ${target.title}")
+            println()
+            println("${Colors.LIGHT_YELLOW}Переключились на задачу: ${target.title} | ${target.stage.displayName()}${Colors.RESET}")
+            println()
+        }
+    }
+
+    private fun dispatchToAgent(
+        feature: Feature,
+        task: Task,
+        userInput: String = "",
+        planningContext: PlanningContext? = null,
+        validationRounds: Int = MAX_VALIDATION_ROUNDS
+    ) {
         when (task.stage) {
             Stage.PLANNING -> {
-                var input = userInput
+                val ctx = planningContext ?: PlanningContext(
+                    taskTitle = task.title,
+                    taskDescription = task.summary,
+                    history = taskRepository.getHistory(task.id),
+                    featureSummary = feature.summary
+                )
+                var currentCtx = ctx
                 var result: PlanningAgentResponse? = null
                 val invariants = invariantAgent.getAllInvariants()
                 for (attempt in 1..MAX_INVARIANT_RETRIES) {
@@ -96,7 +284,7 @@ internal class ArchitectOrchestrator(
                     val fetched = fetchWithRetry(
                         tag = "PlanningAgent", taskId = task.id,
                         isEmpty = { it.response.isNullOrBlank() && !it.planningComplete }
-                    ) { planningAgent.fetch(feature, task, input, invariants) }
+                    ) { planningAgent.fetch(feature, task, currentCtx, invariants) }
                     spinner.stop()
                     if (fetched == null) {
                         println()
@@ -116,7 +304,11 @@ internal class ArchitectOrchestrator(
                             println()
                             return
                         }
-                        input = "[INVARIANT VIOLATION] ${invResult.reason}\n\nОригинальный запрос: $userInput"
+                        val violation = "[INVARIANT VIOLATION] ${invResult.reason}"
+                        val prevCtx = currentCtx.additionalContext
+                        currentCtx = currentCtx.copy(
+                            additionalContext = if (prevCtx.isNullOrBlank()) violation else "$violation\n\n$prevCtx"
+                        )
                     } else {
                         planningAgent.apply(task, fetched)
                         result = fetched
@@ -132,10 +324,16 @@ internal class ArchitectOrchestrator(
                 }
                 println()
                 if (result.planningComplete) {
-                    taskRepository.updateStage(task.id, Stage.EXECUTION)
-                    NetworkLogger.logEvent("[ArchitectOrchestrator]", "PLANNING → EXECUTION: ${task.id} | ${task.title}")
-                    val next = taskRepository.getTask(task.id) ?: return
-                    dispatchToAgent(feature, next, AUTO_EXEC)
+                    if (result.plan.isNullOrBlank()) {
+                        println()
+                        println("${Colors.DARK_GRAY}Планирование не завершено — план не создан. Уточните детали.${Colors.RESET}")
+                        println()
+                    } else {
+                        taskRepository.updateStage(task.id, Stage.EXECUTION)
+                        NetworkLogger.logEvent("[ArchitectOrchestrator]", "PLANNING → EXECUTION: ${task.id} | ${task.title}")
+                        val next = taskRepository.getTask(task.id) ?: return
+                        dispatchToAgent(feature, next, AUTO_EXEC)
+                    }
                 }
             }
             Stage.EXECUTION -> {
@@ -195,7 +393,7 @@ internal class ArchitectOrchestrator(
                     taskRepository.updateStage(task.id, Stage.VALIDATION)
                     NetworkLogger.logEvent("[ArchitectOrchestrator]", "EXECUTION → VALIDATION: ${task.id} | ${task.title}")
                     val next = taskRepository.getTask(task.id) ?: return
-                    dispatchToAgent(feature, next, AUTO_VALID)
+                    dispatchToAgent(feature, next, AUTO_VALID, validationRounds = validationRounds)
                 } else {
                     NetworkLogger.logEvent("[ArchitectOrchestrator]", "EXECUTION: max attempts ($MAX_EXEC_ATTEMPTS) reached without completion: ${task.id}")
                 }
@@ -228,11 +426,18 @@ internal class ArchitectOrchestrator(
                         println()
                     }
                     fetched.returnToExecution -> {
+                        if (validationRounds <= 0) {
+                            NetworkLogger.logEvent("[ArchitectOrchestrator]", "VALIDATION → ABORT (max rounds): ${task.id} | ${task.title}")
+                            println()
+                            println("${Colors.LIGHT_YELLOW}Достигнут лимит итераций проверки. Задача сохранена в текущем состоянии.${Colors.RESET}")
+                            println()
+                            return
+                        }
                         taskRepository.updateStage(task.id, Stage.EXECUTION)
                         NetworkLogger.logEvent("[ArchitectOrchestrator]", "VALIDATION → EXECUTION: ${task.id} | ${task.title} | reason: ${fetched.currentStep}")
                         val next = taskRepository.getTask(task.id) ?: return
                         val feedback = "[VALIDATION FEEDBACK]\n${fetched.review.orEmpty()}\n\nУстрани все замечания из review выше."
-                        dispatchToAgent(feature, next, feedback)
+                        dispatchToAgent(feature, next, feedback, validationRounds = validationRounds - 1)
                     }
                 }
             }
@@ -244,86 +449,35 @@ internal class ArchitectOrchestrator(
         }
     }
 
-    private fun handleNewFeature(userInput: String) {
-        val feature = featureRepository.createFeature(userInput)
-        val task = taskRepository.createTask(feature.id, userInput)
-        NetworkLogger.logEvent("[ArchitectOrchestrator]", "NEW_FEATURE: ${feature.id} | ${feature.title}")
-        NetworkLogger.logEvent("[ArchitectOrchestrator]", "NEW_TASK: ${task.id} | featureId=${feature.id}")
-        taskRepository.appendHistory(task.id, userInput)
-    }
-
-    private fun handleNewTask(userInput: String) {
-        val feature = featureRepository.getActiveFeature() ?: return
-        val task = taskRepository.createTask(feature.id, userInput)
-        NetworkLogger.logEvent("[ArchitectOrchestrator]", "NEW_TASK: ${task.id} | featureId=${feature.id} | ${task.title}")
-        taskRepository.appendHistory(task.id, userInput)
-    }
-
-    private fun handleTaskUpdate(userInput: String, intentResult: IntentResult) {
-        val feature = featureRepository.getActiveFeature() ?: return
-        val targetTaskId = intentResult.taskId
-        if (targetTaskId != null) {
-            val target = taskRepository.getTask(targetTaskId)
-            if (target != null && target.featureId == feature.id) {
-                val current = taskRepository.getActiveTaskForFeature(feature.id)
-                if (current?.id != targetTaskId) {
-                    taskRepository.activateTask(targetTaskId)
-                    NetworkLogger.logEvent("[ArchitectOrchestrator]", "TASK_SWITCH: ${current?.id ?: "none"} → $targetTaskId")
-                }
-            }
+    private fun parseThought(raw: String): ArchitectThought? {
+        val trimmed = raw.trim().removePrefix("```json").removePrefix("```").removeSuffix("```").trim()
+        runCatching { json.decodeFromString<ArchitectThought>(trimmed) }.getOrNull()?.let { return it }
+        val start = raw.indexOf('{')
+        val end = raw.lastIndexOf('}')
+        if (start >= 0 && end > start) {
+            runCatching { json.decodeFromString<ArchitectThought>(raw.substring(start, end + 1)) }
+                .getOrNull()?.let { return it }
         }
-        val activeTask = taskRepository.getActiveTaskForFeature(feature.id) ?: return
-        taskRepository.appendHistory(activeTask.id, userInput)
+        return null
     }
 
-    private fun handleSwitchFeature(intentResult: IntentResult) {
-        val targetId = intentResult.featureId ?: return
-        val prevActive = featureRepository.getActiveFeature()
+    private fun loadSystemPrompt(): String =
+        runCatching { File(promptDir, "architect_orchestrator.txt").readText() }
+            .getOrElse { FALLBACK_SYSTEM_PROMPT }
 
-        if (prevActive != null) {
-            val prevTask = taskRepository.getActiveTaskForFeature(prevActive.id)
-            if (prevTask != null) {
-                taskRepository.pauseTask(prevTask.id)
-                NetworkLogger.logEvent("[ArchitectOrchestrator]", "PAUSE_TASK: ${prevTask.id} | ${prevTask.title}")
-            }
-        }
+    private fun loadArchSettings(): String =
+        listOf("smartagent/arch_settings.md", "arch_settings.md")
+            .map(::File)
+            .firstOrNull { it.exists() }
+            ?.runCatching { readText().trim() }
+            ?.getOrNull() ?: ""
 
-        featureRepository.setActiveFeature(targetId)
-        val newActive = featureRepository.getActiveFeature() ?: return
-
-        NetworkLogger.logEvent(
-            source = "[ArchitectOrchestrator]",
-            message = "SWITCH_FEATURE: ${prevActive?.id ?: "none"} → ${newActive.id} | ${newActive.title}"
-        )
-
-        println()
-        println("${Colors.LIGHT_YELLOW}Переключились на: ${newActive.title}${Colors.RESET}")
-
-        val pausedTask = taskRepository.getTasksForFeature(newActive.id)
-            .filter { it.status == TaskStatus.PAUSED }
-            .maxByOrNull { it.updatedAt }
-
-        if (pausedTask != null) {
-            taskRepository.activateTask(pausedTask.id)
-            NetworkLogger.logEvent("[ArchitectOrchestrator]", "RESUME_TASK: ${pausedTask.id} | ${pausedTask.title}")
-            println("${Colors.LIGHT_VIOLET}Вернемся к задаче: ${pausedTask.title}${Colors.RESET}")
-            val resumeSpinner = AgentSpinner.startResume(pausedTask.stage)
-            Thread.sleep(1500)
-            resumeSpinner.stop()
-        } else {
-            val activeTask = taskRepository.getActiveTaskForFeature(newActive.id)
-            if (activeTask != null) {
-                println("${Colors.DARK_GRAY}Продолжаем: ${activeTask.title} | ${activeTask.stage.displayName()}${Colors.RESET}")
-            }
-        }
-        println()
-    }
-
-    private fun handleDefault(userInput: String) {
-        val feature = featureRepository.getActiveFeature() ?: return
-        val task = taskRepository.getActiveTaskForFeature(feature.id) ?: return
-        taskRepository.appendHistory(task.id, userInput)
-    }
+    private fun loadUserProfile(): String =
+        listOf("smartagent/user_profile.md", "user_profile.md", "cli/user_profile.md")
+            .map(::File)
+            .firstOrNull { it.exists() }
+            ?.runCatching { readText().trim() }
+            ?.getOrNull() ?: ""
 
     private fun <T> fetchWithRetry(
         tag: String,
@@ -344,7 +498,13 @@ internal class ArchitectOrchestrator(
         private const val AUTO_EXEC = "Начни проектирование на основе утверждённого плана."
         private const val AUTO_VALID = "Проверь созданную архитектуру на полноту и корректность."
         private const val MAX_INVARIANT_RETRIES = 3
+        private const val MAX_VALIDATION_ROUNDS = 3
         private const val MAX_EXEC_ATTEMPTS = 5
         private const val MAX_LLM_RETRIES = 3
     }
 }
+
+private val FALLBACK_SYSTEM_PROMPT = """
+Ты — главный архитектор проекта. Осмысли намерение пользователя и верни ТОЛЬКО JSON:
+{"response":"...","action":"ANSWER|CREATE_TASK|UPDATE_TASK|SWITCH_TASK","taskTitle":null,"taskDescription":null,"additionalContext":null}
+""".trimIndent()

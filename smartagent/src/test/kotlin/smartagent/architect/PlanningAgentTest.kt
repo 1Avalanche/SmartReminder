@@ -40,13 +40,19 @@ class PlanningAgentTest {
         tmpDir.deleteRecursively()
     }
 
+    private fun planningContext(description: String = "Test description") = PlanningContext(
+        taskTitle = task.title,
+        taskDescription = description,
+        featureSummary = feature.summary
+    )
+
     @Test
     fun `run returns response when gateway succeeds`() {
         val json = """{"planningComplete":false,"currentStep":"Сбор требований","expectedAction":"Уточнить","summary":"","response":"Расскажите подробнее"}"""
         val gateway = FakeLLMGateway(json)
         val agent = PlanningAgent(config, tokens, taskRepo, gateway)
 
-        val result = agent.run(feature, task, "добавь кнопку")
+        val result = agent.run(feature, task, planningContext("добавь кнопку"))
 
         assertNotNull(result)
         assertEquals(false, result.planningComplete)
@@ -58,7 +64,7 @@ class PlanningAgentTest {
         val gateway = FakeLLMGateway()
         val agent = PlanningAgent(config, tokens, taskRepo, gateway)
 
-        val result = agent.run(feature, task, "input")
+        val result = agent.run(feature, task, planningContext("input"))
 
         assertNull(result)
     }
@@ -69,7 +75,7 @@ class PlanningAgentTest {
         val gateway = FakeLLMGateway(json)
         val agent = PlanningAgent(config, tokens, taskRepo, gateway)
 
-        agent.run(feature, task, "всё понятно, начинаем")
+        agent.run(feature, task, planningContext("всё понятно, начинаем"))
 
         val updatedTask = taskRepo.getTask(task.id)
         assertEquals(Stage.PLANNING, updatedTask?.stage)
@@ -81,7 +87,7 @@ class PlanningAgentTest {
         val gateway = FakeLLMGateway(json)
         val agent = PlanningAgent(config, tokens, taskRepo, gateway)
 
-        agent.run(feature, task, "input")
+        agent.run(feature, task, planningContext("input"))
 
         val plan = taskRepo.getPlan(task.id)
         assertEquals("## My Plan", plan)
@@ -92,7 +98,7 @@ class PlanningAgentTest {
         val gateway = FakeLLMGateway("this is not json")
         val agent = PlanningAgent(config, tokens, taskRepo, gateway)
 
-        val result = agent.run(feature, task, "input")
+        val result = agent.run(feature, task, planningContext("input"))
 
         assertNull(result)
     }
@@ -103,7 +109,7 @@ class PlanningAgentTest {
         val gateway = FakeLLMGateway(json)
         val agent = PlanningAgent(config, tokens, taskRepo, gateway)
 
-        agent.run(feature, task, "вопрос")
+        agent.run(feature, task, planningContext("вопрос"))
 
         val history = taskRepo.getHistory(task.id)
         assertTrue(history.contains("Ответ агента"))

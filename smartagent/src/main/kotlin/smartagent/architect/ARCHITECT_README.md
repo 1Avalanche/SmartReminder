@@ -47,13 +47,15 @@ Architect — это режим SmartAgent для структурированн
 
 [ExecutionAgent создаёт архитектурный документ]
   → InvariantAgent проверяет ответ агента
+  → если executionComplete=false — повтор до MAX_EXEC_ATTEMPTS раз
   → автоматически: сохраняет architecture.md, запускает ValidationAgent
 
 [ValidationAgent находит пробел в offline-режиме]
-  → возвращает задачу на Проектирование
+  → возвращает задачу на Проектирование с [VALIDATION FEEDBACK]
+  → цикл повторяется до MAX_VALIDATION_ROUNDS раз
 
 [ExecutionAgent дорабатывает документ]
-  → ValidationAgent принимает → задача DONE
+  → ValidationAgent принимает → задача DONE → выводит финальный артефакт
 ```
 
 ### Управление проектами
@@ -95,7 +97,8 @@ Main.kt
                        └── dispatchToAgent()
                              ├── [PLANNING]   InvariantAgent.check(agentResponse) × до 3 попыток
                              ├── [EXECUTION]  InvariantAgent.check(agentResponse) × до 3 попыток
-                             └── [VALIDATION] ValidationAgent (без retry)
+                             │               + внешний цикл × до 5 попыток при executionComplete=false
+                             └── [VALIDATION] ValidationAgent (без retry, но до 3 раундов EXEC→VALID)
 
 ArchitectOrchestrator
   ├── InvariantAgent        — проверка инвариантов (вход пользователя + ответы агентов)
@@ -138,14 +141,38 @@ ArchitectOnboarding
    - иначе → добавляет сообщение в историю задачи
 4. Находит активную фичу + задачу → `dispatchToAgent()`
 
-`dispatchToAgent()` запускает агента для текущего `Stage`:
-- `PLANNING` → цикл до 3 попыток: `PlanningAgent.fetch()` → `InvariantAgent.check(response)`;
+`dispatchToAgent(feature, task, userInput, validationRounds = MAX_VALIDATION_ROUNDS)` запускает агента для текущего `Stage`:
+
+- `PLANNING` — цикл до `MAX_INVARIANT_RETRIES` попыток: `PlanningAgent.fetch()` → `InvariantAgent.check(response)`;
   при нарушении — повтор с `[INVARIANT VIOLATION]`; при успехе — `PlanningAgent.apply()`.
   Если `planningComplete=true` — переключает на `EXECUTION` и вызывает `dispatchToAgent()` снова.
-- `EXECUTION` → аналогичный цикл с `ExecutionAgent.fetch()` + `apply()`.
-  Если `executionComplete=true` — переключает на `VALIDATION` и повторяет.
-- `VALIDATION` → одиночный вызов `ValidationAgent.fetch()` + `apply()` (без retry-цикла).
-  Агент сам решает: `DONE` или назад в `EXECUTION`.
+
+- `EXECUTION` — два вложенных цикла:
+  - **внешний** (`MAX_EXEC_ATTEMPTS`): повторяет весь execution-цикл, если `executionComplete=false`;
+    при каждой повторной попытке передаёт `AUTO_EXEC` как вход
+  - **внутренний** (`MAX_INVARIANT_RETRIES`): `ExecutionAgent.fetch()` → `InvariantAgent.check(artifact)`;
+    при нарушении — повтор с `[INVARIANT VIOLATION]`; при успехе — `ExecutionAgent.apply()`
+  Если `executionComplete=true` — переключает на `VALIDATION` и повторяет `dispatchToAgent()`.
+
+- `VALIDATION` — одиночный вызов `ValidationAgent.fetch()` + `apply()` (без retry-цикла).
+  - `validationPassed=true` → `completeTask()`, выводит финальный архитектурный артефакт
+  - `returnToExecution=true` → если `validationRounds <= 0`, прерывает (достигнут лимит итераций);
+    иначе переводит в `EXECUTION`, передаёт `[VALIDATION FEEDBACK]\n{review}` как вход,
+    рекурсивно вызывает `dispatchToAgent(validationRounds - 1)`
+
+**Вспомогательный метод `fetchWithRetry`** — оборачивает LLM-вызов: при `null` или пустом ответе
+повторяет до `MAX_LLM_RETRIES` раз, логируя причину каждой попытки.
+
+**Константы:**
+
+| Константа | Значение | Смысл |
+|-----------|----------|-------|
+| `MAX_INVARIANT_RETRIES` | 3 | Попыток получить ответ агента без нарушения инварианта |
+| `MAX_VALIDATION_ROUNDS` | 3 | Максимум циклов VALIDATION→EXECUTION→VALIDATION |
+| `MAX_EXEC_ATTEMPTS` | 5 | Попыток завершить EXECUTION при `executionComplete=false` |
+| `MAX_LLM_RETRIES` | 3 | Попыток LLM-вызова при `null`/пустом ответе |
+| `AUTO_EXEC` | `"Начни проектирование..."` | Автовход при переходе PLANNING→EXECUTION |
+| `AUTO_VALID` | `"Проверь созданную архитектуру..."` | Автовход при переходе EXECUTION→VALIDATION |
 
 ---
 
@@ -165,6 +192,13 @@ ArchitectOnboarding
 - `VALID` — текст соответствует инвариантам
 - `INVALID` — нарушение; `reason` объясняет что именно
 - `NEW_INVARIANT` — пользователь объявляет новый запрет; `invariant` — текст запрета
+
+**Методы:**
+- `check(input)` — основная проверка
+- `getAllInvariants()` — объединённый текст системных + пользовательских запретов (передаётся агентам)
+- `getUserInvariants()` — только пользовательские запреты (для команды `/invariants`)
+- `saveUserInvariant(invariant)` — append в `user.md`
+- `clearUserInvariants()` — очищает `user.md`
 
 ---
 
@@ -200,8 +234,14 @@ LLM-вызов для классификации намерения.
 }
 ```
 
+**`apply()` сохраняет:**
+- `currentStep` / `expectedAction` в задачу (`updateCurrentStep`)
+- `summary` в поле задачи (`updateTask`)
+- `plan` в `{taskId}-plan.md` (только при `planningComplete=true`)
+- `response` в `{taskId}-history.md` с ролью `PlanningAgent`
+
 **Side effects при `planningComplete=true` (в `ArchitectOrchestrator`):**
-- `ArchitectOrchestrator` сохраняет `plan` в `{taskId}-plan.md` и переводит задачу в `Stage.EXECUTION`
+- переводит задачу в `Stage.EXECUTION`
 
 ---
 
@@ -210,7 +250,9 @@ LLM-вызов для классификации намерения.
 
 **API:** аналогично `PlanningAgent` — `fetch()` / `apply()` / `run()`.
 
-**Контекст:** фича, задача, `{taskId}-plan.md`, текущий `{taskId}-architecture.md`, история, инварианты  
+**Контекст:** план (`{taskId}-plan.md`), текущий артефакт (`{taskId}-architecture.md`),
+блок `VALIDATION FEEDBACK` (если вход начинается с `[VALIDATION FEEDBACK]`),
+блок `INVARIANT FEEDBACK` (если `[INVARIANT VIOLATION]`)  
 **Выход:** `ExecutionAgentResponse`:
 
 ```json
@@ -223,10 +265,14 @@ LLM-вызов для классификации намерения.
 }
 ```
 
-`artifact` — полный markdown архитектуры; не показывается пользователю, только сохраняется.
+`artifact` — полный markdown архитектуры; сохраняется в файл каждый вызов `apply()`.
+
+**`apply()` сохраняет:**
+- `currentStep` / `expectedAction` в задачу
+- `artifact` в `{taskId}-architecture.md`
+- `response` в историю с ролью `ExecutionAgent`
 
 **Side effects при `executionComplete=true` (в `ArchitectOrchestrator`):**
-- сохраняет `artifact` в `{taskId}-architecture.md`
 - переводит задачу в `Stage.VALIDATION`
 
 ---
@@ -248,10 +294,16 @@ LLM-вызов для классификации намерения.
 }
 ```
 
-**Side effects:**
-- сохраняет `review` в `{taskId}-review.md`
-- `validationPassed=true` → `completeTask()` → статус `DONE`
-- `returnToExecution=true` → `Stage.EXECUTION`
+`review` — внутренний документ (сохраняется в файл). `response` — текст в консоль пользователю.
+
+**`apply()` сохраняет:**
+- `currentStep` / `expectedAction` в задачу
+- `review` в `{taskId}-review.md`
+- `response` в историю с ролью `ValidationAgent`
+
+**Side effects (в `ArchitectOrchestrator`):**
+- `validationPassed=true` → `completeTask()` → статус `DONE`; выводит финальный артефакт
+- `returnToExecution=true` → `Stage.EXECUTION` (если `validationRounds > 0`)
 
 ---
 
@@ -270,12 +322,23 @@ LLM-вызов для классификации намерения.
 
 | Файл | Содержимое |
 |------|------------|
-| `{id}-history.md` | лог диалога (User / PlanningAgent / ExecutionAgent / ValidationAgent) |
+| `{id}-history.md` | лог диалога (User / PlanningAgent / ExecutionAgent / ValidationAgent / InvariantAgent) |
 | `{id}-plan.md` | план от PlanningAgent |
 | `{id}-architecture.md` | архитектурный документ от ExecutionAgent |
 | `{id}-review.md` | обзор от ValidationAgent |
 
-При `createTask()` предыдущая активная задача фичи автоматически ставится на паузу.
+**Методы управления задачами:**
+- `createTask()` — создаёт задачу; автоматически ставит на паузу текущую активную задачу фичи
+- `activateTask(taskId)` — делает задачу активной; автоматически паузит предыдущую активную
+- `pauseTask(taskId)` — ставит на паузу
+- `completeTask(taskId)` — завершает (`status=COMPLETED`, `stage=DONE`)
+- `updateStage(taskId, stage)` — FSM-гард: разрешены только переходы из `allowedTransitions`
+- `updateCurrentStep(taskId, currentStep, expectedAction)` — обновляет прогресс задачи
+
+**Разрешённые переходы стадий (`allowedTransitions`):**
+- `PLANNING → EXECUTION`
+- `EXECUTION → VALIDATION`
+- `VALIDATION → EXECUTION`
 
 ---
 
@@ -287,7 +350,7 @@ LLM-вызов для классификации намерения.
 | `arch_settings.md` | накопленные решения проекта (append-only) |
 | `arch_tasks.json` | рабочие задачи с последними решениями (upsert по имени) |
 
-Строит system-prompt: `prompts/architect/system.md` + содержимое `arch_settings.md`.
+Строит system-prompt: `prompts/architect/architect_orchestrator.md` + содержимое `arch_settings.md`.
 Используется в `Main.kt` для `startSession()` и в команде `/memory`.
 
 ---
@@ -306,9 +369,9 @@ LLM-вызов для классификации намерения.
                              ▼                                        │
                       ┌─────────────┐                                 │
                ┌─────►│  EXECUTION  │◄──── returnToExecution=true ───┐│
-               │      └──────┬──────┘                                ││
+               │      └──────┬──────┘   (до MAX_VALIDATION_ROUNDS)   ││
                │             │ executionComplete=true                ││
-               │             │ (ExecutionAgent сохраняет arch.md)    ││
+               │             │ (до MAX_EXEC_ATTEMPTS попыток)        ││
                │             ▼                                        ││
                │      ┌─────────────┐                                 │
                │      │  VALIDATION │─────────────────────────────────┘
@@ -357,13 +420,13 @@ smartagent/
 └── architect/
     ├── active_feature.txt        ← id активной фичи
     ├── features/
-    │   ├── feature-001.json      ← Feature: id, title, status, createdAt, updatedAt
+    │   ├── feature-001.json      ← Feature: id, title, summary, status, createdAt, updatedAt
     │   └── feature-002.json
     ├── invariants/
     │   ├── system.md             ← системные запреты (неизменяемы)
     │   └── user.md               ← пользовательские запреты (append-only)
     └── tasks/
-        ├── task-001.json         ← Task: id, featureId, stage, status, currentStep, ...
+        ├── task-001.json         ← Task: id, featureId, stage, status, currentStep, expectedAction, summary, ...
         ├── task-001-history.md   ← лог диалога
         ├── task-001-plan.md      ← артефакт планирования
         ├── task-001-architecture.md  ← архитектурный документ

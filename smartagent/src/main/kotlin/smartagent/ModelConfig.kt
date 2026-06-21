@@ -21,7 +21,6 @@ internal enum class AgentMode(val displayName: String, val basePrompt: String) {
     ),
     ARCHITECT(
         displayName = "architect",
-        // TODO: load system prompt from prompts/architect/system.md at runtime
         basePrompt = "Ты — архитектор программного обеспечения. Помогаешь проектировать системы и принимать архитектурные решения."
     );
 
