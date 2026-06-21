@@ -64,18 +64,15 @@ class PlanningAgentTest {
     }
 
     @Test
-    fun `run transitions stage to EXECUTION when planningComplete`() {
+    fun `run does not change task stage when planningComplete`() {
         val json = """{"planningComplete":true,"currentStep":"Готово","expectedAction":"Начать проектирование","summary":"требования собраны","response":"Приступаем","plan":"## Plan\n- step 1"}"""
         val gateway = FakeLLMGateway(json)
         val agent = PlanningAgent(config, tokens, taskRepo, gateway)
 
-        val result = agent.run(feature, task, "всё понятно, начинаем")
-
-        assertNotNull(result)
-        assertTrue(result.planningComplete)
+        agent.run(feature, task, "всё понятно, начинаем")
 
         val updatedTask = taskRepo.getTask(task.id)
-        assertEquals(Stage.EXECUTION, updatedTask?.stage)
+        assertEquals(Stage.PLANNING, updatedTask?.stage)
     }
 
     @Test

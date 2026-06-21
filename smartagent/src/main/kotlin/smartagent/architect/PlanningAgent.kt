@@ -3,7 +3,6 @@ package smartagent.architect
 import kotlinx.serialization.Serializable
 import smartagent.LLMGateway
 import smartagent.Message
-import smartagent.NetworkLogger
 import smartagent.SessionConfig
 import smartagent.TokenTracker
 import smartagent.json
@@ -15,7 +14,7 @@ data class PlanningAgentResponse(
     val currentStep: String = "Сбор требований",
     val expectedAction: String = "Уточнить требования",
     val summary: String = "",
-    val response: String = "",
+    val response: String? = null,
     val plan: String? = null
 )
 
@@ -23,8 +22,7 @@ internal class PlanningAgent(
     private val config: SessionConfig,
     private val tokens: TokenTracker,
     private val taskRepository: TaskRepository,
-    private val gateway: LLMGateway,
-    private val invariantAgent: InvariantAgent
+    private val gateway: LLMGateway
 ) {
     private val promptDir: File = listOf(
         "smartagent/src/main/kotlin/prompts/architect",
@@ -32,15 +30,15 @@ internal class PlanningAgent(
         "prompts/architect"
     ).map(::File).firstOrNull { it.isDirectory } ?: File("smartagent/src/main/kotlin/prompts/architect")
 
-    fun run(feature: Feature, task: Task, userInput: String): PlanningAgentResponse? {
-        val parsed = fetch(feature, task, userInput) ?: return null
+    fun run(feature: Feature, task: Task, userInput: String, invariants: String = ""): PlanningAgentResponse? {
+        val parsed = fetch(feature, task, userInput, invariants) ?: return null
         apply(task, parsed)
         return parsed
     }
 
-    fun fetch(feature: Feature, task: Task, userInput: String): PlanningAgentResponse? {
+    fun fetch(feature: Feature, task: Task, userInput: String, invariants: String = ""): PlanningAgentResponse? {
         val messages = listOf(
-            Message("system", loadSystemPrompt()),
+            Message("system", loadSystemPrompt(invariants)),
             Message("user", buildContext(feature, task, userInput))
         )
         val response = gateway.chat(messages, config.currentModel, "[PlanningAgent]") ?: return null
@@ -65,14 +63,9 @@ internal class PlanningAgent(
             agentResponse.plan?.takeIf { it.isNotBlank() }?.let {
                 taskRepository.savePlan(task.id, it)
             }
-            taskRepository.updateStage(task.id, Stage.EXECUTION)
-            NetworkLogger.logEvent(
-                source = "[FSM]",
-                message = "PLANNING → EXECUTION: ${task.id} | ${task.title}"
-            )
         }
 
-        taskRepository.appendHistory(task.id, agentResponse.response, role = "PlanningAgent")
+        taskRepository.appendHistory(task.id, agentResponse.response.orEmpty(), role = "PlanningAgent")
     }
 
     private fun buildContext(feature: Feature, task: Task, userInput: String): String = buildString {
@@ -113,17 +106,16 @@ internal class PlanningAgent(
         return null
     }
 
-    private fun loadSystemPrompt(): String {
+    private fun loadSystemPrompt(invariants: String = ""): String {
         val base = runCatching { File(promptDir, "planning_agent.txt").readText() }
             .getOrElse { FALLBACK_PROMPT }
-        val invariants = invariantAgent.getAllInvariants()
         if (invariants.isEmpty()) return base
         return "$base\n\nЗАПРЕТЫ — ВСЁ ПЕРЕЧИСЛЕННОЕ ЗАПРЕЩЕНО К ИСПОЛЬЗОВАНИЮ В АРХИТЕКТУРЕ:\n$invariants"
     }
 }
 
 private val FALLBACK_PROMPT = """
-Ты — агент планирования задачи. Собирай требования, задавай уточняющие вопросы.
+Ты — агент планирования задачи. Собирай требования, задавай уточняющие вопросы. Ты не можешь начать планирование, если остались незакрытые вопросы к пользователю - задавай уточняющие вопросы, пока не получишь на них ответ.
 Верни ТОЛЬКО JSON: {"planningComplete":false,"currentStep":"...","expectedAction":"...","summary":"...","response":"...","plan":null}
 Когда planningComplete:true, заполни plan — markdown-документ с требованиями.
 """.trimIndent()

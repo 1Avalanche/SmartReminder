@@ -3,7 +3,6 @@ package smartagent.architect
 import kotlinx.serialization.Serializable
 import smartagent.LLMGateway
 import smartagent.Message
-import smartagent.NetworkLogger
 import smartagent.SessionConfig
 import smartagent.TokenTracker
 import smartagent.json
@@ -15,16 +14,15 @@ data class ValidationAgentResponse(
     val returnToExecution: Boolean = false,
     val currentStep: String = "",
     val expectedAction: String? = null,
-    val review: String = "",
-    val response: String = ""
+    val review: String? = null,
+    val response: String? = null
 )
 
 internal class ValidationAgent(
     private val config: SessionConfig,
     private val tokens: TokenTracker,
     private val taskRepository: TaskRepository,
-    private val gateway: LLMGateway,
-    private val invariantAgent: InvariantAgent
+    private val gateway: LLMGateway
 ) {
     private val promptDir: File = listOf(
         "smartagent/src/main/kotlin/prompts/architect",
@@ -32,47 +30,34 @@ internal class ValidationAgent(
         "prompts/architect"
     ).map(::File).firstOrNull { it.isDirectory } ?: File("smartagent/src/main/kotlin/prompts/architect")
 
-    fun run(feature: Feature, task: Task, userInput: String): ValidationAgentResponse? {
+    fun run(feature: Feature, task: Task, userInput: String, invariants: String = ""): ValidationAgentResponse? {
+        val parsed = fetch(feature, task, userInput, invariants) ?: return null
+        apply(task, parsed)
+        return parsed
+    }
+
+    fun fetch(feature: Feature, task: Task, userInput: String, invariants: String = ""): ValidationAgentResponse? {
         val messages = listOf(
-            Message("system", loadSystemPrompt()),
+            Message("system", loadSystemPrompt(invariants)),
             Message("user", buildContext(feature, task, userInput))
         )
         val response = gateway.chat(messages, config.currentModel, "[ValidationAgent]") ?: return null
         response.usage?.let { tokens.addTokenEntry(it) }
-        val parsed = parseResponse(response.content) ?: return null
-        applyToTask(task, parsed)
-        return parsed
+        return parseResponse(response.content)
     }
 
-    private fun applyToTask(task: Task, agentResponse: ValidationAgentResponse) {
+    fun apply(task: Task, agentResponse: ValidationAgentResponse) {
         taskRepository.updateCurrentStep(
             taskId = task.id,
             currentStep = agentResponse.currentStep,
             expectedAction = agentResponse.expectedAction
         )
 
-        if (agentResponse.review.isNotBlank()) {
+        if (!agentResponse.review.isNullOrBlank()) {
             taskRepository.saveReview(task.id, agentResponse.review)
         }
 
-        taskRepository.appendHistory(task.id, agentResponse.response, role = "ValidationAgent")
-
-        when {
-            agentResponse.validationPassed -> {
-                taskRepository.completeTask(task.id)
-                NetworkLogger.logEvent(
-                    source = "[FSM]",
-                    message = "VALIDATION → DONE: ${task.id} | ${task.title} (feature ${task.featureId} stays ACTIVE)"
-                )
-            }
-            agentResponse.returnToExecution -> {
-                taskRepository.updateStage(task.id, Stage.EXECUTION)
-                NetworkLogger.logEvent(
-                    source = "[FSM]",
-                    message = "VALIDATION → EXECUTION: ${task.id} | ${task.title} | reason: ${agentResponse.currentStep}"
-                )
-            }
-        }
+        taskRepository.appendHistory(task.id, agentResponse.response.orEmpty(), role = "ValidationAgent")
     }
 
     private fun buildContext(feature: Feature, task: Task, userInput: String): String = buildString {
@@ -98,7 +83,7 @@ internal class ValidationAgent(
 
         val architecture = taskRepository.getArchitecture(task.id)
         if (architecture.isNotBlank()) {
-            appendLine("ARCHITECTURE")
+            appendLine("ARTIFACT")
             appendLine(architecture)
             appendLine()
         }
@@ -134,10 +119,9 @@ internal class ValidationAgent(
         return null
     }
 
-    private fun loadSystemPrompt(): String {
+    private fun loadSystemPrompt(invariants: String = ""): String {
         val base = runCatching { File(promptDir, "validation_agent.txt").readText() }
             .getOrElse { FALLBACK_PROMPT }
-        val invariants = invariantAgent.getAllInvariants()
         if (invariants.isEmpty()) return base
         return "$base\n\nЗАПРЕТЫ — ВСЁ ПЕРЕЧИСЛЕННОЕ ЗАПРЕЩЕНО К ИСПОЛЬЗОВАНИЮ В АРХИТЕКТУРЕ:\n$invariants"
     }

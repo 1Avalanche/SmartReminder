@@ -65,6 +65,9 @@ internal class IntentClassifier(
                     if (t.summary.isNotBlank()) appendLine("  summary: ${t.summary}")
                 }
                 appendLine()
+            } else {
+                appendLine("OPEN TASKS: нет (все задачи завершены)")
+                appendLine()
             }
         } else {
             appendLine("ACTIVE FEATURE: none")

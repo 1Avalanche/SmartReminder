@@ -5,10 +5,10 @@ import smartagent.Spinner
 
 internal object AgentSpinner {
     private val agentMessages = mapOf(
-        "IntentClassifier" to "Думаю...",
+        "IntentClassifier" to "Размышляю...",
         "PlanningAgent" to "Планирую...",
-        "ExecutionAgent" to "Проектирую...",
-        "ValidationAgent" to "Проверяю архитектуру...",
+        "ExecutionAgent" to "Выполняю...",
+        "ValidationAgent" to "Проверяю результат...",
         "ArchitectClient" to "Обдумываю ответ...",
         "SummaryAgent" to "Сжимаю контекст...",
         "ProfileAgent" to "Обновляю профиль..."
@@ -23,7 +23,7 @@ internal object AgentSpinner {
     fun start(agentName: String, stage: Stage? = null): Spinner {
         val msg = agentMessages[agentName]
             ?: stage?.let { stageMessages[it] }
-            ?: "Думаю..."
+            ?: "Размышляю..."
         return Spinner("${Colors.DARK_GRAY}$msg${Colors.RESET}")
     }
 

@@ -2,11 +2,18 @@ package smartagent.architect
 
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import smartagent.NetworkLogger
 import java.io.File
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 
 private val taskJson = Json { prettyPrint = true; ignoreUnknownKeys = true; encodeDefaults = true }
+
+private val allowedTransitions: Map<Stage, Set<Stage>> = mapOf(
+    Stage.PLANNING   to setOf(Stage.EXECUTION),
+    Stage.EXECUTION  to setOf(Stage.VALIDATION),
+    Stage.VALIDATION to setOf(Stage.EXECUTION)
+)
 
 internal class TaskRepository(
     baseDir: File = if (File("smartagent").isDirectory) File("smartagent") else File(".")
@@ -77,6 +84,11 @@ internal class TaskRepository(
 
     fun updateStage(taskId: String, stage: Stage) {
         val task = getTask(taskId) ?: return
+        val allowed = allowedTransitions[task.stage]
+        if (allowed == null || stage !in allowed) {
+            NetworkLogger.logEvent("[FSM_GUARD]", "REJECTED: ${task.stage} → $stage (task ${task.id})")
+            return
+        }
         saveTask(task.copy(stage = stage, updatedAt = nowTimestamp()))
     }
 

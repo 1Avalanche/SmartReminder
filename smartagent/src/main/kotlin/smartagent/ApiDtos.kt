@@ -2,14 +2,26 @@ package smartagent
 
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
+import kotlinx.serialization.EncodeDefault
+import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 
 @Serializable
 data class Message(val role: String, val content: String)
 
+@OptIn(ExperimentalSerializationApi::class)
 @Serializable
-data class ChatRequest(val model: String, val messages: List<Message>, val transforms: List<String> = emptyList())
+data class Reasoning(@EncodeDefault val enabled: Boolean = false)
+
+@OptIn(ExperimentalSerializationApi::class)
+@Serializable
+data class ChatRequest(
+    val model: String,
+    val messages: List<Message>,
+    val transforms: List<String> = emptyList(),
+    @EncodeDefault val reasoning: Reasoning = Reasoning()
+)
 
 @Serializable
 data class Choice(val message: Message, val index: Int = 0)

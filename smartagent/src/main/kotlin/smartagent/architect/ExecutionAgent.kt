@@ -3,7 +3,6 @@ package smartagent.architect
 import kotlinx.serialization.Serializable
 import smartagent.LLMGateway
 import smartagent.Message
-import smartagent.NetworkLogger
 import smartagent.SessionConfig
 import smartagent.TokenTracker
 import smartagent.json
@@ -14,8 +13,8 @@ data class ExecutionAgentResponse(
     val executionComplete: Boolean = false,
     val currentStep: String = "Проектирование",
     val expectedAction: String = "Подтвердить результат",
-    val artifact: String = "",
-    val response: String = ""
+    val artifact: String? = null,
+    val response: String? = null
 )
 
 internal class ExecutionAgent(
@@ -30,16 +29,16 @@ internal class ExecutionAgent(
         "prompts/architect"
     ).map(::File).firstOrNull { it.isDirectory } ?: File("smartagent/src/main/kotlin/prompts/architect")
 
-    fun run(feature: Feature, task: Task, userInput: String): ExecutionAgentResponse? {
-        val parsed = fetch(feature, task, userInput) ?: return null
+    fun run(feature: Feature, task: Task, userInput: String, invariants: String = ""): ExecutionAgentResponse? {
+        val parsed = fetch(feature, task, userInput, invariants) ?: return null
         apply(task, parsed)
         return parsed
     }
 
-    fun fetch(feature: Feature, task: Task, userInput: String): ExecutionAgentResponse? {
+    fun fetch(feature: Feature, task: Task, userInput: String, invariants: String = ""): ExecutionAgentResponse? {
         val messages = listOf(
-            Message("system", loadSystemPrompt()),
-            Message("user", buildContext(feature, task, userInput))
+            Message("system", loadSystemPrompt(invariants)),
+            Message("user", buildContext(task, userInput))
         )
         val response = gateway.chat(messages, config.currentModel, "[ExecutionAgent]") ?: return null
         response.usage?.let { tokens.addTokenEntry(it) }
@@ -57,35 +56,14 @@ internal class ExecutionAgent(
             expectedAction = agentResponse.expectedAction
         )
 
-        if (agentResponse.artifact.isNotBlank()) {
+        if (!agentResponse.artifact.isNullOrBlank()) {
             taskRepository.saveArchitecture(task.id, agentResponse.artifact)
         }
 
-        if (agentResponse.executionComplete) {
-            taskRepository.updateStage(task.id, Stage.VALIDATION)
-            NetworkLogger.logEvent(
-                source = "[FSM]",
-                message = "EXECUTION → VALIDATION: ${task.id} | ${task.title}"
-            )
-        }
-
-        taskRepository.appendHistory(task.id, agentResponse.response, role = "ExecutionAgent")
+        taskRepository.appendHistory(task.id, agentResponse.response.orEmpty(), role = "ExecutionAgent")
     }
 
-    private fun buildContext(feature: Feature, task: Task, userInput: String): String = buildString {
-        appendLine("FEATURE")
-        appendLine("id: ${feature.id}")
-        appendLine("title: ${feature.title}")
-        if (feature.summary.isNotBlank()) appendLine("summary: ${feature.summary}")
-        appendLine()
-
-        appendLine("TASK")
-        appendLine("id: ${task.id}")
-        appendLine("title: ${task.title}")
-        appendLine("stage: ${task.stage}")
-        if (task.summary.isNotBlank()) appendLine("summary: ${task.summary}")
-        appendLine()
-
+    private fun buildContext(task: Task, userInput: String): String = buildString {
         val plan = taskRepository.getPlan(task.id)
         if (plan.isNotBlank()) {
             appendLine("PLAN")
@@ -95,24 +73,22 @@ internal class ExecutionAgent(
 
         val architecture = taskRepository.getArchitecture(task.id)
         if (architecture.isNotBlank()) {
-            appendLine("CURRENT ARCHITECTURE")
+            appendLine("CURRENT ARTIFACT")
             appendLine(architecture)
             appendLine()
         } else {
-            appendLine("CURRENT ARCHITECTURE: (пусто — начни с нуля)")
+            appendLine("CURRENT ARTIFACT: (пусто — создай с нуля)")
             appendLine()
         }
 
-        val history = taskRepository.getHistory(task.id)
-        if (history.isNotBlank()) {
-            appendLine("CONVERSATION HISTORY")
-            appendLine(history)
-            appendLine()
+        if (userInput.startsWith("[INVARIANT VIOLATION]")) {
+            appendLine("INVARIANT FEEDBACK")
+            appendLine(userInput)
         }
-
-        appendLine("USER MESSAGE")
-        appendLine()
-        append(userInput)
+        if (userInput.startsWith("[VALIDATION FEEDBACK]")) {
+            appendLine("VALIDATION FEEDBACK")
+            appendLine(userInput.removePrefix("[VALIDATION FEEDBACK]").trim())
+        }
     }.trimEnd()
 
     private fun parseResponse(raw: String): ExecutionAgentResponse? {
@@ -127,9 +103,12 @@ internal class ExecutionAgent(
         return null
     }
 
-    private fun loadSystemPrompt(): String =
-        runCatching { File(promptDir, "execution_agent.txt").readText() }
+    private fun loadSystemPrompt(invariants: String = ""): String {
+        val base = runCatching { File(promptDir, "execution_agent.txt").readText() }
             .getOrElse { FALLBACK_PROMPT }
+        if (invariants.isEmpty()) return base
+        return "$base\n\nЗАПРЕТЫ — ВСЁ ПЕРЕЧИСЛЕННОЕ ЗАПРЕЩЕНО К ИСПОЛЬЗОВАНИЮ В АРХИТЕКТУРЕ:\n$invariants"
+    }
 }
 
 private val FALLBACK_PROMPT = """

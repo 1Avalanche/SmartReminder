@@ -24,6 +24,8 @@ NEW_TASK
 
 TASK_UPDATE
   Пользователь развивает, уточняет или продолжает существующую задачу из OPEN TASKS.
+  TASK_UPDATE возможен ТОЛЬКО если OPEN TASKS непустой (не "нет").
+  Если OPEN TASKS пуст или "нет" — TASK_UPDATE невозможен, выбери NEW_TASK или NEW_FEATURE.
   Укажи taskId из списка OPEN TASKS, к которой наиболее подходит запрос.
   Если подходящей задачи нет — выбери ту, что помечена [ACTIVE].
   Пример: "добавь rbac", "расширь модель данных", "нужен экспорт в pdf", "уточни роли"
@@ -45,4 +47,7 @@ APPROVAL
 - SWITCH_FEATURE → featureId = id проекта из OTHER FEATURES
 - остальные → featureId и taskId = null
 
-При неоднозначности: предпочитай TASK_UPDATE перед NEW_TASK, NEW_TASK перед NEW_FEATURE.
+При неоднозначности:
+- Если OPEN TASKS непустой: предпочитай TASK_UPDATE перед NEW_TASK.
+- Если OPEN TASKS пуст ("нет"): предпочитай NEW_TASK перед NEW_FEATURE.
+- NEW_FEATURE только если запрос явно про другой продукт или проект.

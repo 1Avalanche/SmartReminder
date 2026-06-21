@@ -1,9 +1,8 @@
 package smartagent
 
-import smartagent.architect.ArchitectClient
 import smartagent.architect.ArchitectOnboarding
+import smartagent.architect.ArchitectOrchestrator
 import smartagent.architect.ExecutionAgent
-import smartagent.architect.FeatureOrchestrator
 import smartagent.architect.FeatureRepository
 import smartagent.architect.FeatureStatus
 import smartagent.architect.IntentClassifier
@@ -37,12 +36,11 @@ fun main(args: Array<String>) {
     val taskRepository = TaskRepository()
     val gateway = OkHttpLLMGateway()
     val invariantAgent = InvariantAgent(session.config, session.tokens, gateway)
-    val architectClient = ArchitectClient(session, architectOnboarding, invariantAgent)
     val intentClassifier = IntentClassifier(session.config, featureRepository, taskRepository, gateway)
-    val planningAgent = PlanningAgent(session.config, session.tokens, taskRepository, gateway, invariantAgent)
+    val planningAgent = PlanningAgent(session.config, session.tokens, taskRepository, gateway)
     val executionAgent = ExecutionAgent(session.config, session.tokens, taskRepository, gateway)
-    val validationAgent = ValidationAgent(session.config, session.tokens, taskRepository, gateway, invariantAgent)
-    val featureOrchestrator = FeatureOrchestrator(featureRepository, taskRepository, intentClassifier, planningAgent, executionAgent, validationAgent, invariantAgent)
+    val validationAgent = ValidationAgent(session.config, session.tokens, taskRepository, gateway)
+    val architectOrchestrator = ArchitectOrchestrator(session, featureRepository, taskRepository, invariantAgent, intentClassifier, planningAgent, executionAgent, validationAgent)
 
     if (session.currentMode == AgentMode.ARCHITECT) {
         println("${Colors.DARK_GRAY}Model: ${session.currentModel.shortName} | Mode: ${session.currentMode.displayName}")
@@ -54,7 +52,7 @@ fun main(args: Array<String>) {
         println("Type /help for commands, /exit to quit.${Colors.RESET}\n")
     }
 
-    runRepl(session, client, architectOnboarding, architectClient, featureRepository, taskRepository, intentClassifier, featureOrchestrator, invariantAgent)
+    runRepl(session, client, architectOnboarding, architectOrchestrator, featureRepository, taskRepository, intentClassifier, invariantAgent)
 }
 
 private data class ParsedArgs(
@@ -80,11 +78,10 @@ private fun runRepl(
     session: ChatSession,
     client: ChatClient,
     architectOnboarding: ArchitectOnboarding,
-    architectClient: ArchitectClient,
+    architectOrchestrator: ArchitectOrchestrator,
     featureRepository: FeatureRepository,
     taskRepository: TaskRepository,
     intentClassifier: IntentClassifier,
-    featureOrchestrator: FeatureOrchestrator,
     invariantAgent: InvariantAgent
 ) {
     while (true) {
@@ -170,17 +167,7 @@ private fun runRepl(
             input.startsWith("/") -> println("${Colors.LIGHT_YELLOW}Unknown command: $input${Colors.RESET}")
             else -> {
                 when {
-                    session.currentMode == AgentMode.ARCHITECT -> {
-                        val callLLM = featureOrchestrator.process(input)
-                        if (callLLM) {
-                            architectClient.sendMessage(input)
-                        } else {
-                            session.addLogEntry(LogEntry(input, "", ""))
-                            if (session.shouldTriggerProfile()) Thread {
-                                ProfileAgent(session).update()
-                            }.apply { isDaemon = true }.start()
-                        }
-                    }
+                    session.currentMode == AgentMode.ARCHITECT -> architectOrchestrator.process(input)
                     else -> client.sendMessage(input)
                 }
             }
