@@ -127,7 +127,7 @@ internal class ArchitectOrchestrator(
                 println()
                 if (!result.response.isNullOrBlank()) {
                     println("${Colors.LIGHT_VIOLET}${result.response}${Colors.RESET}")
-                } else {
+                } else if (!result.planningComplete) {
                     println("${Colors.DARK_GRAY}Агент не дал ответа. Попробуйте уточнить или повторить запрос.${Colors.RESET}")
                 }
                 println()
