@@ -22,6 +22,10 @@ internal enum class AgentMode(val displayName: String, val basePrompt: String) {
     ARCHITECT(
         displayName = "architect",
         basePrompt = "Ты — архитектор программного обеспечения. Помогаешь проектировать системы и принимать архитектурные решения."
+    ),
+    ASSIST(
+        displayName = "assist",
+        basePrompt = ""   // assist mode talks to MCP servers, not the LLM
     );
 
     companion object {

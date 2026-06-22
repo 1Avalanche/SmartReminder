@@ -12,6 +12,8 @@ import smartagent.architect.Stage
 import smartagent.architect.TaskRepository
 import smartagent.architect.TaskStatus
 import smartagent.architect.ValidationAgent
+import smartagent.mcp_handler.AssistRepl
+import smartagent.mcp_handler.McpManager
 import java.io.File
 
 fun main(args: Array<String>) {
@@ -30,6 +32,8 @@ fun main(args: Array<String>) {
         }
     }
 
+    parsedArgs.initialMode?.let { session.switchMode(it) }
+
     val client = ChatClient(session)
     val architectOnboarding = ArchitectOnboarding()
     val featureRepository = FeatureRepository()
@@ -42,14 +46,21 @@ fun main(args: Array<String>) {
     val validationAgent = ValidationAgent(session.config, session.tokens, taskRepository, gateway)
     val architectOrchestrator = ArchitectOrchestrator(session, featureRepository, taskRepository, invariantAgent, planningAgent, executionAgent, validationAgent, gateway, session.config, session.tokens)
 
-    if (session.currentMode == AgentMode.ARCHITECT) {
-        println("${Colors.DARK_GRAY}Model: ${session.currentModel.shortName} | Mode: ${session.currentMode.displayName}")
-        println("Type /help for commands, /exit to quit.${Colors.RESET}\n")
-        architectOnboarding.startSession(featureRepository.getActiveFeature() != null)
-    } else {
-        println("${Colors.LIGHT_YELLOW}SmartAgent готов к работе!${Colors.RESET}")
-        println("${Colors.DARK_GRAY}Model: ${session.currentModel.shortName} | Mode: ${session.currentMode.displayName}")
-        println("Type /help for commands, /exit to quit.${Colors.RESET}\n")
+    when (session.currentMode) {
+        AgentMode.ARCHITECT -> {
+            println("${Colors.DARK_GRAY}Model: ${session.currentModel.shortName} | Mode: ${session.currentMode.displayName}")
+            println("Type /help for commands, /exit to quit.${Colors.RESET}\n")
+            architectOnboarding.startSession(featureRepository.getActiveFeature() != null)
+        }
+        AgentMode.ASSIST -> {
+            println("${Colors.LIGHT_YELLOW}SmartAgent — Assist mode${Colors.RESET}")
+            println("${Colors.DARK_GRAY}Type '/mcp list' to see servers, /help for all commands, /exit to quit.${Colors.RESET}\n")
+        }
+        else -> {
+            println("${Colors.LIGHT_YELLOW}SmartAgent готов к работе!${Colors.RESET}")
+            println("${Colors.DARK_GRAY}Model: ${session.currentModel.shortName} | Mode: ${session.currentMode.displayName}")
+            println("Type /help for commands, /exit to quit.${Colors.RESET}\n")
+        }
     }
 
     runRepl(session, client, architectOnboarding, architectOrchestrator, featureRepository, taskRepository, intentClassifier, invariantAgent)
@@ -57,21 +68,24 @@ fun main(args: Array<String>) {
 
 private data class ParsedArgs(
     val model: ModelConfig? = null,
-    val repoPath: String? = null
+    val repoPath: String? = null,
+    val initialMode: AgentMode? = null
 )
 
 private fun parseArgs(args: Array<String>): ParsedArgs {
     var model: ModelConfig? = null
     var repoPath: String? = null
+    var initialMode: AgentMode? = null
     var i = 0
     while (i < args.size) {
         when (args[i]) {
             "--model" -> { model = ModelConfig.fromName(args.getOrElse(++i) { "" }); i++ }
             "--repo" -> { repoPath = args.getOrElse(++i) { "" }; i++ }
+            "assist"  -> { initialMode = AgentMode.ASSIST; i++ }
             else -> i++
         }
     }
-    return ParsedArgs(model, repoPath)
+    return ParsedArgs(model, repoPath, initialMode)
 }
 
 private fun runRepl(
@@ -91,7 +105,7 @@ private fun runRepl(
         if (input.isBlank()) continue
 
         when {
-            input == "/exit" || input == "/quit" -> { println("${Colors.LIGHT_YELLOW}Goodbye!${Colors.RESET}"); break }
+            input == "/exit" || input == "/quit" -> { McpManager.shutdown(); println("${Colors.LIGHT_YELLOW}Goodbye!${Colors.RESET}"); break }
             input == "/help" -> { showHelp(); println() }
             input == "/history" || input == "/hist" -> showHistory(session)
             input == "/clear" || input == "/new" -> {
@@ -133,8 +147,10 @@ private fun runRepl(
             input.startsWith("/mode ") -> {
                 val modeName = input.removePrefix("/mode ").trim()
                 switchMode(session, modeName)
-                if (session.currentMode == AgentMode.ARCHITECT) {
-                    architectOnboarding.startSession(featureRepository.getActiveFeature() != null)
+                when (session.currentMode) {
+                    AgentMode.ARCHITECT -> architectOnboarding.startSession(featureRepository.getActiveFeature() != null)
+                    AgentMode.ASSIST -> println("${Colors.DARK_GRAY}Assist mode. Type '/mcp list' to start.${Colors.RESET}")
+                    else -> {}
                 }
             }
             input == "/totalTokens" -> showTotalTokens(session)
@@ -164,11 +180,14 @@ private fun runRepl(
             input == "/debug task history" -> debugTaskHistory(featureRepository, taskRepository)
             input == "/debug task artifact" -> debugTaskArtifact(featureRepository, taskRepository)
             input == "/debug task review" -> debugTaskReview(featureRepository, taskRepository)
+            // MCP commands — available in any mode
+            input == "/mcp" || input.startsWith("/mcp ") -> AssistRepl.handle(input.removePrefix("/"))
             input.startsWith("/") -> println("${Colors.LIGHT_YELLOW}Unknown command: $input${Colors.RESET}")
             else -> {
-                when {
-                    session.currentMode == AgentMode.ARCHITECT -> architectOrchestrator.process(input)
-                    else -> client.sendMessage(input)
+                when (session.currentMode) {
+                    AgentMode.ARCHITECT -> architectOrchestrator.process(input)
+                    AgentMode.ASSIST    -> println("${Colors.DARK_GRAY}Use /mcp commands in assist mode. Type /help.${Colors.RESET}")
+                    else                -> client.sendMessage(input)
                 }
             }
         }
@@ -193,7 +212,7 @@ Commands:
   /context                        Show files loaded in context
   /context clear                  Remove all files from context
   /mode                           Show current mode
-  /mode <name>                    Switch mode (chat, code-analyzer, architect)
+  /mode <name>                    Switch mode (chat, code-analyzer, architect, assist)
   /memory                         Show arch_settings.md and arch_tasks.json
   /profile                        Show user_profile.md
   /totalTokens                    Show token usage per request + total sum
@@ -208,6 +227,12 @@ Project commands:
   /feature pause                  Pause active project
   /feature resume                 Resume a paused project
   /feature info                   Show project details
+
+MCP commands (any mode):
+  /mcp list                       List registered MCP servers and status
+  /mcp <name> init                Start and connect to a server
+  /mcp <name> tools               List tools exposed by server
+  /mcp <name> stop                Disconnect from server
 
 Other:
   /status                         Show what's happening right now

@@ -31,3 +31,10 @@ tasks.shadowJar {
 tasks.named<JavaExec>("run") {
     standardInput = System.`in`
 }
+
+tasks.register<JavaExec>("runMcp") {
+    group = "application"
+    description = "Run MCP client (connects to filesystem MCP server via stdio)"
+    classpath = sourceSets.main.get().runtimeClasspath
+    mainClass.set("smartagent.mcp_handler.McpMainKt")
+}
