@@ -1,13 +1,17 @@
 package smartagent.mcp_handler
 
+import kotlinx.serialization.json.Json
 import smartagent.Colors
 
 /**
  * Handles /mcp commands. Available in any mode.
  * Called from Main.kt with the leading "/" already stripped.
  * Understands: mcp list | mcp <name> init | mcp <name> tools | mcp <name> stop
+ *              mcp <name> tool <tool_name> [key=value ...]
  */
 object AssistRepl {
+
+    private val prettyJson = Json { prettyPrint = true }
 
     fun handle(input: String) {
         val tokens = input.trim().split(Regex("\\s+"))
@@ -19,6 +23,7 @@ object AssistRepl {
             tokens.size == 3 && tokens[2] == "init"  -> cmdInit(tokens[1])
             tokens.size == 3 && tokens[2] == "tools" -> cmdTools(tokens[1])
             tokens.size == 3 && tokens[2] == "stop"  -> cmdStop(tokens[1])
+            tokens.size >= 4 && tokens[2] == "tool"  -> cmdTool(tokens[1], tokens[3], tokens.drop(4))
             else -> hint()
         }
     }
@@ -40,8 +45,13 @@ object AssistRepl {
             } else {
                 "${Colors.DARK_GRAY}disconnected${Colors.RESET}"
             }
-            println("  ${Colors.BRIGHT_WHITE}${cfg.name}${Colors.RESET}  ($statusTag)")
-            println("  ${Colors.DARK_GRAY}cmd: ${cfg.command.joinToString(" ")}${Colors.RESET}")
+            val transportTag = "${Colors.DARK_GRAY}${cfg.transportMode.name.lowercase()}${Colors.RESET}"
+            println("  ${Colors.BRIGHT_WHITE}${cfg.name}${Colors.RESET}  ($statusTag, $transportTag)")
+            val detail = when (cfg.transportMode) {
+                TransportMode.PROCESS -> "cmd: ${cfg.command.joinToString(" ")}"
+                TransportMode.HTTP    -> "url: ${cfg.httpUrl}"
+            }
+            println("  ${Colors.DARK_GRAY}$detail${Colors.RESET}")
             println()
         }
     }
@@ -82,9 +92,19 @@ object AssistRepl {
         println("${Colors.LIGHT_YELLOW}Tools for $name:${Colors.RESET}")
         println()
         tools.forEach { tool ->
-            println("  ${Colors.BRIGHT_WHITE}${tool.name}${Colors.RESET}: ${Colors.LIGHT_GRAY}${tool.description}${Colors.RESET}")
+            println("  ${Colors.BRIGHT_WHITE}${tool.name}${Colors.RESET}")
+            if (!tool.description.isNullOrBlank()) {
+                println("  ${Colors.DARK_GRAY}description: ${tool.description}${Colors.RESET}")
+            }
+            val params = renderToolSchema(tool.inputSchema)
+            if (params.isNotEmpty()) {
+                println("  ${Colors.DARK_GRAY}parameters:${Colors.RESET}")
+                params.forEach { line ->
+                    println("  ${Colors.LIGHT_GRAY}  $line${Colors.RESET}")
+                }
+            }
+            println()
         }
-        println()
     }
 
     private fun cmdStop(name: String) {
@@ -97,13 +117,32 @@ object AssistRepl {
         println("${Colors.LIGHT_YELLOW}$name stopped.${Colors.RESET}")
     }
 
+    private fun cmdTool(server: String, toolName: String, rawArgs: List<String>) {
+        val args = parseToolArgs(rawArgs)
+        when (val result = McpToolRouter.callTool(server, toolName, args)) {
+            is ToolCallResult.Success -> {
+                println()
+                println("${Colors.LIGHT_GREEN}Tool result:${Colors.RESET}")
+                println(renderToolResult(result.result))
+                println()
+            }
+            is ToolCallResult.Error -> {
+                println()
+                println("${Colors.LIGHT_YELLOW}Tool error:${Colors.RESET}")
+                println("${Colors.DARK_GRAY}${result.message}${Colors.RESET}")
+                println()
+            }
+        }
+    }
+
     // ─── Help ─────────────────────────────────────────────────────────────────
 
     private fun hint() {
         println("${Colors.LIGHT_YELLOW}MCP commands:${Colors.RESET}")
-        println("${Colors.DARK_GRAY}  /mcp list              — list registered servers and their status${Colors.RESET}")
-        println("${Colors.DARK_GRAY}  /mcp <name> init       — start and connect to a server${Colors.RESET}")
-        println("${Colors.DARK_GRAY}  /mcp <name> tools      — list tools exposed by server${Colors.RESET}")
-        println("${Colors.DARK_GRAY}  /mcp <name> stop       — disconnect from server${Colors.RESET}")
+        println("${Colors.DARK_GRAY}  /mcp list                                — list registered servers and their status${Colors.RESET}")
+        println("${Colors.DARK_GRAY}  /mcp <name> init                         — start and connect to a server${Colors.RESET}")
+        println("${Colors.DARK_GRAY}  /mcp <name> tools                        — list tools exposed by server${Colors.RESET}")
+        println("${Colors.DARK_GRAY}  /mcp <name> tool <tool_name> [key=value] — call a tool with arguments${Colors.RESET}")
+        println("${Colors.DARK_GRAY}  /mcp <name> stop                         — disconnect from server${Colors.RESET}")
     }
 }

@@ -8,14 +8,21 @@ object McpManager {
 
     private val cwd get() = System.getProperty("user.dir")
 
-    // Built-in servers — extend this list or call registerServer() at runtime
-    private val builtinServers = listOf(
-        McpServerConfig(
+    // Built-in servers. HTTP server is included only when MCP_SERVER_URL env var is set.
+    private val builtinServers: List<McpServerConfig> = buildList {
+        add(McpServerConfig(
             name = "filesystem",
             command = listOf("npx", "-y", "@modelcontextprotocol/server-filesystem", cwd),
             workDir = cwd
-        )
-    )
+        ))
+        McpRemoteConfig.serverUrl?.let { url ->
+            add(McpServerConfig(
+                name = "github-remote",
+                transportMode = TransportMode.HTTP,
+                httpUrl = url
+            ))
+        }
+    }
 
     private val extraServers = mutableListOf<McpServerConfig>()
     private val sessions = mutableMapOf<String, McpSession>()
@@ -29,7 +36,7 @@ object McpManager {
 
     /**
      * Starts and initializes a server. If already connected and [force] is false, returns
-     * the existing session without restarting the process.
+     * the existing session without restarting.
      */
     fun initServer(name: String, force: Boolean = false): McpSession {
         val existing = sessions[name]

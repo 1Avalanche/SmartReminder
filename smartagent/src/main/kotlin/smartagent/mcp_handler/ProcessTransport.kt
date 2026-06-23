@@ -8,7 +8,7 @@ import java.io.OutputStreamWriter
 import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.TimeUnit
 
-class ProcessTransport(command: List<String>, workDir: String) : AutoCloseable {
+class ProcessTransport(command: List<String>, workDir: String) : McpTransport {
     private val process: Process
     private val writer: BufferedWriter
     private val responseQueue = LinkedBlockingQueue<String>()
@@ -48,14 +48,14 @@ class ProcessTransport(command: List<String>, workDir: String) : AutoCloseable {
         }
     }
 
-    fun send(message: String) {
+    override fun send(message: String) {
         writer.write(message)
         writer.newLine()
         writer.flush()
     }
 
     /** Blocks up to [timeoutMs] for next line from server stdout. Returns null on timeout. */
-    fun pollLine(timeoutMs: Long): String? =
+    override fun pollLine(timeoutMs: Long): String? =
         responseQueue.poll(timeoutMs, TimeUnit.MILLISECONDS)
 
     /**

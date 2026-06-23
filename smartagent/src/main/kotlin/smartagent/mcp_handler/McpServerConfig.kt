@@ -1,7 +1,11 @@
 package smartagent.mcp_handler
 
+enum class TransportMode { PROCESS, HTTP }
+
 data class McpServerConfig(
     val name: String,
-    val command: List<String>,
-    val workDir: String = System.getProperty("user.dir")
+    val command: List<String> = emptyList(),
+    val workDir: String = System.getProperty("user.dir"),
+    val transportMode: TransportMode = TransportMode.PROCESS,
+    val httpUrl: String? = null
 )

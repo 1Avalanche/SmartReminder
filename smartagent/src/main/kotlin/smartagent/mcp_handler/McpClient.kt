@@ -3,9 +3,13 @@ package smartagent.mcp_handler
 import kotlinx.serialization.json.*
 import java.util.concurrent.atomic.AtomicInteger
 
-data class McpTool(val name: String, val description: String)
+data class McpTool(
+    val name: String,
+    val description: String?,
+    val inputSchema: JsonElement? = null
+)
 
-class McpClient(private val transport: ProcessTransport) : AutoCloseable {
+class McpClient(private val transport: McpTransport) : AutoCloseable {
     private val nextId = AtomicInteger(1)
 
     /**
@@ -43,7 +47,8 @@ class McpClient(private val transport: ProcessTransport) : AutoCloseable {
             val obj = el.jsonObject
             McpTool(
                 name = obj["name"]?.jsonPrimitive?.content ?: "",
-                description = obj["description"]?.jsonPrimitive?.content ?: ""
+                description = obj["description"]?.jsonPrimitive?.content,
+                inputSchema = obj["inputSchema"]
             )
         }
     }
