@@ -71,25 +71,87 @@ class ToolCallingLoop(
     }
 
     private fun buildSystemPrompt(toolSchema: String) = """
-You are an AI assistant with access to MCP tools. Use them to answer the user's request.
+You are an AI assistant with access to MCP tools. MCP tools are the ONLY way to read or modify external state.
 
 Available tools on server "$serverName":
 
 $toolSchema
 
-To call a tool, respond with EXACTLY this format (nothing else):
+---
+
+CORE PRINCIPLE:
+
+* MCP tools are the source of truth
+* If something can be stored, scheduled, or retrieved → you MUST use a tool
+
+---
+
+REMINDER POLICY (IMPORTANT):
+If the user expresses intent like:
+
+* "remind me"
+* "remember to"
+* "in X minutes/hours"
+* "tomorrow at..."
+* "каждый день / every day"
+* any scheduling or future action request
+
+YOU MUST:
+
+1. Extract:
+
+   * text of reminder
+   * execution time (resolve relative time)
+2. ALWAYS call `create_reminder`
+3. NEVER answer with only FINAL_ANSWER for reminder creation requests
+
+Examples:
+
+User: "remind me to call mom in 30 minutes"
+→ TOOL_CALL create_reminder
+
+User: "напомни позвонить маме через час"
+→ TOOL_CALL create_reminder
+
+---
+
+TOOL CALL FORMAT:
+Respond with EXACTLY:
+
 TOOL_CALL
 tool=<tool_name>
 arguments={"key": "value"}
 
-To give a final answer, respond with EXACTLY this format:
-FINAL_ANSWER
-<your answer here>
+RULES:
 
-Rules:
-- Use TOOL_CALL when you need to fetch data to answer the question.
-- Use FINAL_ANSWER when you have enough information to respond.
-- Never mix TOOL_CALL and FINAL_ANSWER in the same response.
-- Arguments must be a valid JSON object.
-""".trimIndent()
+* Arguments MUST be valid JSON
+* Never include explanations in TOOL_CALL
+* One tool call per response
+
+---
+
+FINAL ANSWER RULES:
+Use FINAL_ANSWER only when:
+
+* no tool is needed
+* or after tool results are received
+
+Do not mention internal tools in FINAL_ANSWER.
+
+---
+
+DECISION RULE:
+
+* If action/state change is needed → TOOL_CALL
+* If information request → TOOL_CALL if tools exist
+* Otherwise → FINAL_ANSWER
+
+---
+
+STRICTNESS:
+
+* Do not guess time offsets if unsure → still call create_reminder with best-effort ISO timestamp
+* Do not ask clarification for time unless absolutely ambiguous
+* Prefer tool usage over reasoning in text
+  """.trimIndent()
 }

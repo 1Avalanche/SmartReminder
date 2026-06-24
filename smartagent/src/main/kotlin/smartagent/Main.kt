@@ -15,6 +15,10 @@ import smartagent.architect.ValidationAgent
 import smartagent.agent.toolcalling.ToolCallingAgent
 import smartagent.mcp_handler.AssistRepl
 import smartagent.mcp_handler.McpManager
+import smartagent.telegram.bot.TelegramBotRunner
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import java.io.File
 
 fun main(args: Array<String>) {
@@ -63,6 +67,13 @@ fun main(args: Array<String>) {
             println("${Colors.DARK_GRAY}Model: ${session.currentModel.shortName} | Mode: ${session.currentMode.displayName}")
             println("Type /help for commands, /exit to quit.${Colors.RESET}\n")
         }
+    }
+
+    val telegramToken = System.getenv("TELEGRAM_BOT_TOKEN")
+    if (telegramToken != null) {
+        val botScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+        TelegramBotRunner(telegramToken, gateway, session.currentModel).start(botScope)
+        println("${Colors.LIGHT_GREEN}Telegram bot started.${Colors.RESET}")
     }
 
     runRepl(session, client, architectOnboarding, architectOrchestrator, featureRepository, taskRepository, intentClassifier, invariantAgent, gateway)

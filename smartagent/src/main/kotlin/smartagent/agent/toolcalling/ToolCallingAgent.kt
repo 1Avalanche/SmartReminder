@@ -12,13 +12,14 @@ object ToolCallingAgent {
 
     fun clearHistory() = history.clear()
 
-    fun handle(query: String, gateway: LLMGateway, model: ModelConfig) {
+    fun handle(query: String, gateway: LLMGateway, model: ModelConfig): String {
         val (serverName, session) = McpManager.allServers
             .mapNotNull { cfg -> McpManager.getSession(cfg.name)?.let { cfg.name to it } }
             .firstOrNull { (_, s) -> s.isConnected }
             ?: run {
-                println("${Colors.LIGHT_YELLOW}No MCP server connected. Run: /mcp <name> init${Colors.RESET}")
-                return
+                val msg = "No MCP server connected. Run: /mcp <name> init"
+                println("${Colors.LIGHT_YELLOW}$msg${Colors.RESET}")
+                return msg
             }
 
         val loop = ToolCallingLoop(serverName, session, gateway, model)
@@ -30,5 +31,7 @@ object ToolCallingAgent {
         println()
         println("${Colors.LIGHT_VIOLET}$answer${Colors.RESET}")
         println()
+
+        return answer
     }
 }
