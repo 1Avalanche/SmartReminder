@@ -16,14 +16,14 @@ import smartagent.agent.toolcalling.ToolCallingAgent
 import smartagent.mcp_handler.AssistRepl
 import smartagent.mcp_handler.McpManager
 import smartagent.telegram.bot.TelegramBotRunner
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.runBlocking
 import java.io.File
 
 fun main(args: Array<String>) {
     setupKeysIfNeeded()
     val parsedArgs = parseArgs(args)
+    println("MCP_SERVER_URL = ${System.getenv("MCP_SERVER_URL")}")
+    println("TELEGRAM_BOT_TOKEN = ${System.getenv("TELEGRAM_BOT_TOKEN")}")
     val session = ChatSession()
     session.switchModel(parsedArgs.model ?: Config.loadLastModel() ?: ModelConfig.DEEPSEEK)
 
@@ -37,7 +37,8 @@ fun main(args: Array<String>) {
         }
     }
 
-    parsedArgs.initialMode?.let { session.switchMode(it) }
+    val targetMode = parsedArgs.initialMode ?: AgentMode.ASSIST
+    if (session.currentMode != targetMode) session.switchMode(targetMode)
 
     val client = ChatClient(session)
     val architectOnboarding = ArchitectOnboarding()
@@ -69,14 +70,15 @@ fun main(args: Array<String>) {
         }
     }
 
-    val telegramToken = System.getenv("TELEGRAM_BOT_TOKEN")
+    val telegramToken = Config.localProperties["TELEGRAM_BOT_TOKEN"] ?: System.getenv("TELEGRAM_BOT_TOKEN")
     if (telegramToken != null) {
-        val botScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
-        TelegramBotRunner(telegramToken, gateway, session.currentModel).start(botScope)
-        println("${Colors.LIGHT_GREEN}Telegram bot started.${Colors.RESET}")
+        runBlocking {
+            TelegramBotRunner(telegramToken, gateway, session.currentModel).start(this)
+            println("${Colors.LIGHT_GREEN}Telegram bot started.${Colors.RESET}")
+        }
+    } else {
+        runRepl(session, client, architectOnboarding, architectOrchestrator, featureRepository, taskRepository, intentClassifier, invariantAgent, gateway)
     }
-
-    runRepl(session, client, architectOnboarding, architectOrchestrator, featureRepository, taskRepository, intentClassifier, invariantAgent, gateway)
 }
 
 private data class ParsedArgs(

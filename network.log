@@ -1,0 +1,156 @@
+[MAIN_AGENT]
+=== 2026-06-24 23:43:44 ===
+URL: https://openrouter.ai/api/v1/chat/completions
+--- Request headers ---
+--- Request body ---
+{
+    "model": "qwen/qwen3.7-plus",
+    "messages": [
+        {
+            "role": "system",
+            "content": "Ты - персональный ассистент. Твоя задача - помочь пользователю решить любую его задачу. \nОтвечай по делу, не фантазируй. Предоставляй порядок своих рассуждений.\nВ ответ всегда возвращай только JSON без пояснений и без markdown-разметки с полями:\n- content (обязательно) — ответ, который нужно отобразить пользователю."
+        },
+        {
+            "role": "assistant",
+            "content": "Текущая дата и время: 2026-06-24 23:43:40"
+        },
+        {
+            "role": "user",
+            "content": "привет! что ты умеешь?"
+        }
+    ],
+    "reasoning": {
+        "enabled": false
+    }
+}
+--- Response: 200 ---
+--- Response headers ---
+--- Response body ---
+{
+    "id": "gen-1782326622-89UC71h4TGKnJ9dEsXEX",
+    "object": "chat.completion",
+    "created": 1782326622,
+    "model": "qwen/qwen3.7-plus-20260602",
+    "provider": "Alibaba",
+    "system_fingerprint": null,
+    "service_tier": null,
+    "choices": [
+        {
+            "index": 0,
+            "logprobs": null,
+            "finish_reason": "stop",
+            "native_finish_reason": "stop",
+            "message": {
+                "role": "assistant",
+                "content": "{\n  \"content\": \"Привет! Я — персональный ассистент. Я могу помочь вам с широким кругом задач: ответить на вопросы, написать или отредактировать текст, решить математические или логические задачи, помочь с программированием, перевести текст и многое другое. Чем я могу быть полезен вам сегодня?\"\n}",
+                "refusal": null,
+                "reasoning": null
+            }
+        }
+    ],
+    "usage": {
+        "prompt_tokens": 148,
+        "completion_tokens": 76,
+        "total_tokens": 224,
+        "cost": 1.4464E-4,
+        "is_byok": false,
+        "prompt_tokens_details": {
+            "cached_tokens": 0,
+            "cache_write_tokens": 0,
+            "audio_tokens": 0,
+            "video_tokens": 0
+        },
+        "cost_details": {
+            "upstream_inference_cost": 1.4464E-4,
+            "upstream_inference_prompt_cost": 4.736E-5,
+            "upstream_inference_completions_cost": 9.728E-5
+        },
+        "completion_tokens_details": {
+            "reasoning_tokens": 0,
+            "image_tokens": 0,
+            "audio_tokens": 0
+        }
+    }
+}
+========================================
+
+[MAIN_AGENT]
+=== 2026-06-25 00:12:40 ===
+URL: https://openrouter.ai/api/v1/chat/completions
+--- Request headers ---
+--- Request body ---
+{
+    "model": "qwen/qwen3.7-plus",
+    "messages": [
+        {
+            "role": "system",
+            "content": "Ты - персональный ассистент. Твоя задача - помочь пользователю решить любую его задачу. \nОтвечай по делу, не фантазируй. Предоставляй порядок своих рассуждений.\nВ ответ всегда возвращай только JSON без пояснений и без markdown-разметки с полями:\n- content (обязательно) — ответ, который нужно отобразить пользователю."
+        },
+        {
+            "role": "assistant",
+            "content": "История сообщений:\nВопрос: привет! что ты умеешь?\nОтвет: Привет! Я — персональный ассистент. Я могу помочь вам с широким кругом задач: ответить на вопросы, написать или отредактировать текст, решить математические или логические задачи, помочь с программированием, перевести текст и многое другое. Чем я могу быть полезен вам сегодня?"
+        },
+        {
+            "role": "assistant",
+            "content": "Текущая дата и время: 2026-06-25 00:12:37"
+        },
+        {
+            "role": "user",
+            "content": "привет! что ты умеешь?"
+        }
+    ],
+    "reasoning": {
+        "enabled": false
+    }
+}
+--- Response: 200 ---
+--- Response headers ---
+--- Response body ---
+{
+    "id": "gen-1782328358-RkX3b24DUFu6H07FDptQ",
+    "object": "chat.completion",
+    "created": 1782328358,
+    "model": "qwen/qwen3.7-plus-20260602",
+    "provider": "Alibaba",
+    "system_fingerprint": null,
+    "service_tier": null,
+    "choices": [
+        {
+            "index": 0,
+            "logprobs": null,
+            "finish_reason": "stop",
+            "native_finish_reason": "stop",
+            "message": {
+                "role": "assistant",
+                "content": "{\n  \"content\": \"Привет! Я — персональный ассистент. Я могу помочь вам с широким кругом задач: ответить на вопросы, написать или отредактировать текст, решить математические или логические задачи, помочь с программированием, перевести текст и многое другое. Чем я могу быть полезен вам сегодня?\"\n}",
+                "refusal": null,
+                "reasoning": null
+            }
+        }
+    ],
+    "usage": {
+        "prompt_tokens": 234,
+        "completion_tokens": 76,
+        "total_tokens": 310,
+        "cost": 1.7216E-4,
+        "is_byok": false,
+        "prompt_tokens_details": {
+            "cached_tokens": 0,
+            "cache_write_tokens": 0,
+            "audio_tokens": 0,
+            "video_tokens": 0
+        },
+        "cost_details": {
+            "upstream_inference_cost": 1.7216E-4,
+            "upstream_inference_prompt_cost": 7.488E-5,
+            "upstream_inference_completions_cost": 9.728E-5
+        },
+        "completion_tokens_details": {
+            "reasoning_tokens": 0,
+            "image_tokens": 0,
+            "audio_tokens": 0
+        }
+    }
+}
+========================================
+

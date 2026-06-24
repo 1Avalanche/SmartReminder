@@ -20,7 +20,12 @@ data class TelegramMessage(
 data class TelegramChat(val id: Long)
 
 @Serializable
-data class GetUpdatesResponse(val ok: Boolean, val result: List<TelegramUpdate>)
+data class GetUpdatesResponse(
+    val ok: Boolean,
+    val result: List<TelegramUpdate> = emptyList(),
+    @SerialName("error_code") val errorCode: Int? = null,
+    val description: String? = null
+)
 
 @Serializable
 data class SendMessageRequest(

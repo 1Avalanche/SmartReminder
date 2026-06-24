@@ -30,4 +30,4 @@ dependencyResolutionManagement {
 
 include(":androidApp")
 include(":shared")
-include(":smartagent")
+includeBuild("smartagent")
