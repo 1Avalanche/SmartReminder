@@ -8,5 +8,5 @@ internal object Colors {
     const val DARK_GRAY = "[38;5;246m"
     const val LIGHT_GRAY = "[90m"
     const val BRIGHT_WHITE = "[97m"
-    const val LIGHT_VIOLET = "[38;5;183m"
+    const val LIGHT_VIOLET = "[38;5;189m"
 }

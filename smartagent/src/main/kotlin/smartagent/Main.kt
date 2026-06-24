@@ -12,6 +12,7 @@ import smartagent.architect.Stage
 import smartagent.architect.TaskRepository
 import smartagent.architect.TaskStatus
 import smartagent.architect.ValidationAgent
+import smartagent.agent.toolcalling.ToolCallingAgent
 import smartagent.mcp_handler.AssistRepl
 import smartagent.mcp_handler.McpManager
 import java.io.File
@@ -53,6 +54,7 @@ fun main(args: Array<String>) {
             architectOnboarding.startSession(featureRepository.getActiveFeature() != null)
         }
         AgentMode.ASSIST -> {
+            AssistRepl.handle("mcp github-remote init")
             println("${Colors.LIGHT_YELLOW}SmartAgent — Assist mode${Colors.RESET}")
             println("${Colors.DARK_GRAY}Type '/mcp list' to see servers, /help for all commands, /exit to quit.${Colors.RESET}\n")
         }
@@ -63,7 +65,7 @@ fun main(args: Array<String>) {
         }
     }
 
-    runRepl(session, client, architectOnboarding, architectOrchestrator, featureRepository, taskRepository, intentClassifier, invariantAgent)
+    runRepl(session, client, architectOnboarding, architectOrchestrator, featureRepository, taskRepository, intentClassifier, invariantAgent, gateway)
 }
 
 private data class ParsedArgs(
@@ -96,7 +98,8 @@ private fun runRepl(
     featureRepository: FeatureRepository,
     taskRepository: TaskRepository,
     intentClassifier: IntentClassifier,
-    invariantAgent: InvariantAgent
+    invariantAgent: InvariantAgent,
+    gateway: LLMGateway
 ) {
     while (true) {
         print("${Colors.BRIGHT_WHITE}> ")
@@ -114,6 +117,7 @@ private fun runRepl(
                     architectOnboarding.printHelloSecond()
                 } else {
                     session.clear()
+                    ToolCallingAgent.clearHistory()
                     println("${Colors.LIGHT_YELLOW}Chat history cleared.${Colors.RESET}")
                 }
             }
@@ -147,6 +151,7 @@ private fun runRepl(
             input.startsWith("/mode ") -> {
                 val modeName = input.removePrefix("/mode ").trim()
                 switchMode(session, modeName)
+                ToolCallingAgent.clearHistory()
                 when (session.currentMode) {
                     AgentMode.ARCHITECT -> architectOnboarding.startSession(featureRepository.getActiveFeature() != null)
                     AgentMode.ASSIST -> println("${Colors.DARK_GRAY}Assist mode. Type '/mcp list' to start.${Colors.RESET}")
@@ -186,7 +191,7 @@ private fun runRepl(
             else -> {
                 when (session.currentMode) {
                     AgentMode.ARCHITECT -> architectOrchestrator.process(input)
-                    AgentMode.ASSIST    -> println("${Colors.DARK_GRAY}Use /mcp commands in assist mode. Type /help.${Colors.RESET}")
+                    AgentMode.ASSIST    -> ToolCallingAgent.handle(input, gateway, session.currentModel)
                     else                -> client.sendMessage(input)
                 }
             }
