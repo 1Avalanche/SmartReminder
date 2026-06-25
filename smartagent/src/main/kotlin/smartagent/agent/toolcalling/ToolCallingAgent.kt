@@ -12,7 +12,12 @@ object ToolCallingAgent {
 
     fun clearHistory() = history.clear()
 
-    fun handle(query: String, gateway: LLMGateway, model: ModelConfig): String {
+    fun handle(
+        query: String,
+        gateway: LLMGateway,
+        model: ModelConfig,
+        chatId: Long? = null
+    ): String {
         val (serverName, session) = McpManager.allServers
             .mapNotNull { cfg -> McpManager.getSession(cfg.name)?.let { cfg.name to it } }
             .firstOrNull { (_, s) -> s.isConnected }
@@ -22,7 +27,7 @@ object ToolCallingAgent {
                 return msg
             }
 
-        val loop = ToolCallingLoop(serverName, session, gateway, model)
+        val loop = ToolCallingLoop(serverName, session, gateway, model, chatId = chatId)
         val answer = loop.run(query, history)
 
         history += Message("user", query)

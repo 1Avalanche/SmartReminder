@@ -2,6 +2,7 @@ package smartagent.agent.toolcalling
 
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 
 sealed class ToolCallDecision {
     data class CallTool(val toolName: String, val arguments: JsonObject) : ToolCallDecision()
@@ -25,8 +26,21 @@ fun parseDecision(response: String): ToolCallDecision {
             val after = trimmed.substring(finalAnswerIdx + "FINAL_ANSWER".length).trim()
             ToolCallDecision.FinalAnswer(after)
         }
+        trimmed.contains("<invoke") -> parseXmlInvoke(trimmed)
         else -> ToolCallDecision.ParseError(trimmed)
     }
+}
+
+private val XML_INVOKE_NAME = Regex("""<invoke\s+name="([^"]+)"""")
+private val XML_PARAM = Regex("""<parameter\s+name="([^"]+)">([\s\S]*?)</parameter>""")
+
+private fun parseXmlInvoke(block: String): ToolCallDecision {
+    val toolName = XML_INVOKE_NAME.find(block)?.groupValues?.get(1)
+        ?: return ToolCallDecision.ParseError(block)
+    val args = XML_PARAM.findAll(block).associate { m ->
+        m.groupValues[1] to JsonPrimitive(m.groupValues[2].trim())
+    }
+    return ToolCallDecision.CallTool(toolName, JsonObject(args))
 }
 
 private fun parseToolCall(block: String): ToolCallDecision {

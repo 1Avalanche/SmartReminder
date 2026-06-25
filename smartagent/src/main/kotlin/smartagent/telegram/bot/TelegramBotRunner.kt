@@ -26,7 +26,12 @@ class TelegramBotRunner(
                     val text = update.message?.text ?: continue
                     val chatId = update.message.chat.id
                     // sequential — preserves shared ToolCallingAgent history consistency
-                    val answer = ToolCallingAgent.handle(text, gateway, model)
+                    val answer = ToolCallingAgent.handle(
+                        query = text,
+                        gateway = gateway,
+                        model = model,
+                        chatId = chatId
+                    )
                     client.sendMessage(chatId, answer)
                 }
             }
