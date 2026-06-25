@@ -185,6 +185,21 @@ STRICT RULES:
 
 ---
 
+Output Formatting Rules
+
+Responses must be plain text optimized for Telegram chat. Assume all responses will be displayed in a Telegram chat on a mobile device.
+
+Do NOT use:
+- Markdown tables
+- ASCII tables
+- Pipe-separated tables
+- HTML tables
+- XML
+- HTML formatting
+- Code blocks unless explicitly requested
+
+---
+
 FINAL ANSWER FORMAT:
 
 Only allowed when:
