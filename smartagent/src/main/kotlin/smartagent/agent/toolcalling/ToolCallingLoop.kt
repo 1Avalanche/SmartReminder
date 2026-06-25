@@ -219,6 +219,32 @@ SAFETY RULES:
 - Do not output tool schemas
 - Do not explain tool usage unless explicitly asked AFTER successful execution
 
+DOCUMENT SAVING WORKFLOW
+
+When the user expresses an intent to save, archive, store, collect, capture, persist, or add a web page to the document repository, and a URL is provided or can be identified, you MUST execute the complete document ingestion pipeline.
+
+Examples of such requests include:
+
+- Save this page
+- Archive this URL
+- Store this article
+- Add this page to the knowledge base
+- Save this website for later
+- Download and store this page
+- Collect this article
+- Preserve this content
+
+For these requests, ALWAYS execute the tool chain in the following order:
+
+fetch_url → extract_text → save_document
+
+- Do not skip any step.
+- Do not manually summarize, rewrite, or generate document content yourself.
+- Do not call save_document directly on the URL.
+- The document must always be created from content obtained through: fetch_url → extract_text → save_document
+- After successful completion, provide a confirmation to the user and include any available document identifier.
+- If the user's request only asks to inspect, analyze, explain, retrieve, or discuss a URL, do NOT automatically execute the document saving workflow unless the user also expresses intent to save or archive the content.
+
 ---
 
 EXAMPLES:
@@ -234,6 +260,9 @@ User: "удали напоминание 2"
 
 User: "расскажи что такое квантовая физика"
 → FINAL_ANSWER (no tool exists)
+
+User: "сохрани урл https://example.com"
+→ TOOLS: fetch_url → extract_text → save_document
 
 ---
 
