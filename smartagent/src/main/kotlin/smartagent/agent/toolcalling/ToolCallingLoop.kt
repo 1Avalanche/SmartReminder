@@ -9,20 +9,31 @@ import smartagent.Message
 import smartagent.ModelConfig
 import smartagent.Spinner
 import smartagent.mcp_handler.McpSession
+import smartagent.mcp_handler.McpTool
 import smartagent.mcp_handler.renderToolResult
 
 class ToolCallingLoop(
-    private val serverName: String,
-    private val session: McpSession,
+    private val sessions: Map<String, McpSession>,
     private val gateway: LLMGateway,
     private val model: ModelConfig,
     private val maxIterations: Int = 5,
     private val chatId: Long? = null
 ) {
     fun run(userQuery: String, priorHistory: List<Message> = emptyList()): String {
-        val tools = session.listTools()
-        val toolSchema = formatToolsForPrompt(serverName, tools)
+        val sessionTools: List<Pair<McpSession, McpTool>> = sessions.values
+            .flatMap { session -> session.listTools().map { tool -> session to tool } }
+        val allTools: List<McpTool> = sessionTools.map { it.second }
+        val toolOwner: Map<String, McpSession> = sessionTools.associate { (session, tool) -> tool.name to session }
+        val toolByName: Map<String, McpTool> = allTools.associateBy { it.name }
 
+        sessionTools.groupBy { it.first.name }.forEach { (serverName, pairs) ->
+            println("[ToolLoop] server=$serverName tools=${pairs.map { it.second.name }}")
+        }
+
+        val failureEngine = ToolFailureEngine(toolByName.keys.toSet())
+        var parseErrorCount = 0
+
+        val toolSchema = formatToolsForPrompt(allTools)
         val systemPrompt = buildSystemPrompt(toolSchema)
         val messages = mutableListOf(Message("system", systemPrompt))
         messages += priorHistory
@@ -40,34 +51,48 @@ class ToolCallingLoop(
             val raw = response.content
             println("[ToolLoop] raw_length=${raw.length} raw_preview=${raw.take(200).replace("\n", "↵")}")
 
+            // Pre-validation: XML format hard block
+            if (OutputValidator.containsXml(raw)) {
+                println("[ToolLoop][WARN] XML format detected, rejecting raw=${raw.take(200).replace("\n", "↵")}")
+                parseErrorCount++
+                if (parseErrorCount > OutputValidator.MAX_PARSE_RETRIES) {
+                    println("[ToolLoop][ERROR] Max parse retries exceeded (xml), returning fallback")
+                    return OutputValidator.FALLBACK_MESSAGE
+                }
+                messages += Message("assistant", raw)
+                messages += Message("user", OutputValidator.xmlRejectionPrompt(raw))
+                return@repeat
+            }
+
             when (val decision = parseDecision(raw)) {
                 is ToolCallDecision.FinalAnswer -> {
                     println("[ToolLoop] decision=FinalAnswer")
-                    return decision.text
+                    val text = decision.text
+                    if (!OutputValidator.isSafeForUser(text)) {
+                        println("[ToolLoop][ERROR] FinalAnswer failed safety check, returning fallback")
+                        return OutputValidator.FALLBACK_MESSAGE
+                    }
+                    return text
                 }
 
                 is ToolCallDecision.ParseError -> {
                     val r = decision.raw
                     println("[ToolLoop] decision=ParseError raw=${r.take(300).replace("\n", "↵")}")
-
-                    if (r.contains("TOOL_CALL") || r.contains("<invoke")) {
-                        println("[ToolLoop][WARN] Malformed tool call syntax, re-prompting")
-                        messages += Message("assistant", r)
-                        messages += Message("user", "Malformed tool call. Use the exact format:\nTOOL_CALL\ntool=<name>\narguments={...}\nOr FINAL_ANSWER if no tool needed.")
-                        return@repeat
+                    parseErrorCount++
+                    if (parseErrorCount > OutputValidator.MAX_PARSE_RETRIES) {
+                        println("[ToolLoop][ERROR] Max parse retries exceeded, returning fallback")
+                        return OutputValidator.FALLBACK_MESSAGE
                     }
 
-                    // Preamble detection: LLM started a sentence but didn't complete the protocol
-                    val looksIncomplete = r.trimEnd().endsWith(":") || r.length < 40
-                    if (looksIncomplete) {
-                        println("[ToolLoop][WARN] Response looks like preamble (len=${r.length}), re-prompting")
-                        messages += Message("assistant", r)
-                        messages += Message("user", "Respond with TOOL_CALL or FINAL_ANSWER. Do not write any text before your response.")
-                        return@repeat
+                    val reason = when {
+                        r.contains("TOOL_CALL") || r.contains("<invoke") -> "malformed tool call syntax"
+                        r.trimEnd().endsWith(":") || r.length < 40 -> "response looks like preamble"
+                        else -> "unrecognized format"
                     }
-
-                    // Plain complete text — return as final answer
-                    return r
+                    println("[ToolLoop][WARN] ParseError reason=$reason retries=$parseErrorCount")
+                    messages += Message("assistant", r)
+                    messages += Message("user", OutputValidator.parseErrorRecoveryPrompt(r, reason))
+                    return@repeat
                 }
 
                 is ToolCallDecision.CallTool -> {
@@ -77,32 +102,84 @@ class ToolCallingLoop(
                         k to runCatching { v.jsonPrimitive.content }.getOrElse { v.toString() }
                     }.toMutableMap()
 
-                    // Inject chat_id from Telegram context — never ask the user
-                    if (chatId != null && "chat_id" !in args) {
-                        args["chat_id"] = chatId.toString()
-                        println("[ToolLoop] injected chat_id=$chatId")
+                    val injected = ChatIdInjector.enrich(decision.toolName, args, chatId)
+                    println("[ToolLoop] chat_id_injected=$injected tool=${decision.toolName}")
+
+                    val toolDef = toolByName[decision.toolName]
+                    val finalArgs = ChatIdInjector.stripUnknownArgs(toolDef?.inputSchema, args).toMutableMap()
+                    if (finalArgs.size != args.size) {
+                        println("[ToolLoop] stripped ${args.keys - finalArgs.keys} from tool=${decision.toolName}")
                     }
 
-                    println("[ToolLoop] calling tool=${decision.toolName} resolved_args=$args")
+                    // Guard: disabled tool
+                    if (failureEngine.isDisabled(decision.toolName)) {
+                        val fallback = ToolFallbackStrategy.findAvailableFallback(decision.toolName, failureEngine.availableTools)
+                        val msg = buildString {
+                            appendLine("Tool '${decision.toolName}' is currently disabled due to a prior failure.")
+                            if (fallback != null) appendLine("Use '$fallback' instead.")
+                            else appendLine("No fallback available. Respond with FINAL_ANSWER if you cannot proceed.")
+                        }.trimEnd()
+                        println("[ToolFailure] blocked disabled tool=${decision.toolName} fallback=$fallback")
+                        messages += Message("assistant", raw)
+                        messages += Message("user", msg)
+                        return@repeat
+                    }
 
-                    val toolResult = runCatching {
-                        val element = session.callTool(decision.toolName, args)
+                    // Guard: identical retry
+                    if (failureEngine.isAlreadyCalled(decision.toolName, finalArgs)) {
+                        val msg = failureEngine.buildIdenticalRetryMessage(decision.toolName)
+                        println("[ToolFailure] identical retry blocked: tool=${decision.toolName} args=$finalArgs")
+                        messages += Message("assistant", raw)
+                        messages += Message("user", msg)
+                        return@repeat
+                    }
+
+                    val ownerSession = toolOwner[decision.toolName]
+                    println("[ToolLoop] routing tool=${decision.toolName} → server=${ownerSession?.name ?: "unknown"} final_args=$finalArgs")
+                    if (ownerSession == null) {
+                        println("[ToolLoop][ERROR] Tool=${decision.toolName} not found in any connected server")
+                        messages += Message("assistant", raw)
+                        messages += Message("user", "Tool ${decision.toolName} is not available. Choose from available tools only.")
+                        return@repeat
+                    }
+
+                    failureEngine.markCalled(decision.toolName, finalArgs)
+
+                    val callResult = runCatching {
+                        val element = ownerSession.callTool(decision.toolName, finalArgs)
                         if (element != null) {
                             val rendered = renderToolResult(element)
                             println("[ToolLoop] tool_result=${rendered.take(300)}")
                             rendered
                         } else {
-                            println("[ToolLoop][ERROR] Tool=${decision.toolName} returned null element")
-                            "[tool returned no result]"
+                            println("[ToolLoop][WARN] Tool=${decision.toolName} returned null element")
+                            null
                         }
-                    }.getOrElse { e ->
-                        println("[ToolLoop][ERROR] Tool=${decision.toolName} threw exception: ${e.message}")
-                        e.printStackTrace()
-                        "[tool error: ${e.message}]"
                     }
 
-                    messages += Message("assistant", raw)
-                    messages += Message("user", "Tool ${decision.toolName} returned:\n$toolResult")
+                    when {
+                        callResult.isSuccess && callResult.getOrNull() != null -> {
+                            failureEngine.recordSuccess(decision.toolName)
+                            messages += Message("assistant", raw)
+                            messages += Message("user", "Tool ${decision.toolName} returned:\n${callResult.getOrNull()}")
+                        }
+                        callResult.isSuccess && callResult.getOrNull() == null -> {
+                            // Empty result — treat as success with empty payload, not a failure
+                            failureEngine.recordSuccess(decision.toolName)
+                            messages += Message("assistant", raw)
+                            messages += Message("user", "Tool ${decision.toolName} returned no result.")
+                        }
+                        else -> {
+                            val e = callResult.exceptionOrNull()!!
+                            val errorMsg = e.message ?: "unknown error"
+                            println("[ToolFailure] tool=${decision.toolName} error=$errorMsg")
+                            val failureType = failureEngine.recordFailure(decision.toolName, errorMsg)
+                            val replan = failureEngine.buildReplanMessage(decision.toolName, failureType, errorMsg)
+                            println("[ToolFailure] type=${failureType.name} replan=$replan")
+                            messages += Message("assistant", raw)
+                            messages += Message("user", replan)
+                        }
+                    }
                 }
             }
         }
@@ -145,7 +222,7 @@ You MUST use tools for any action involving:
 - scheduled or delayed execution
 - external system interaction
 
-Available MCP tools on server "$serverName":
+Available MCP tools:
 
 $toolSchema
 
@@ -167,6 +244,47 @@ If and ONLY if:
 
 ---
 
+MULTI-MCP TOOL EXECUTION RULES:
+
+Tools may come from different MCP servers.
+
+Each tool belongs to exactly one MCP server.
+
+You MUST treat tools as part of a distributed system.
+
+You MUST NOT assume all tools are local.
+
+---
+
+TOOL PIPELINE RULES:
+
+If a user request requires multiple steps across tools:
+
+1. You MUST plan a sequence of tool calls
+2. Each tool processes output of previous tool
+3. Tools may belong to different MCP servers
+4. You MUST NOT skip intermediate steps
+
+Example pipelines:
+
+Tavily → My MCP:
+tavily_search → tavily_extract → save_document
+
+My MCP only:
+fetch_url → extract_text → save_document
+
+---
+
+CROSS-SERVER EXECUTION RULE:
+
+If a tool returns data that can be processed by another tool from ANY MCP server:
+
+You MUST continue execution with next tool.
+
+Do NOT stop after first tool if the task is incomplete.
+
+---
+
 TOOL CALL FORMAT (STRICT):
 
 You MUST respond with EXACTLY:
@@ -178,10 +296,31 @@ arguments={"key":"value"}
 STRICT RULES:
 - Output MUST start with TOOL_CALL (no prefix text allowed)
 - arguments MUST be valid JSON
-- ONLY one tool call per response
 - NEVER wrap in XML, markdown, or explanation
 - NEVER output multiple formats in one response
 - NEVER output partial tool calls
+
+TOOL CALL EXECUTION MODEL:
+
+You may execute multiple tool calls in sequence across multiple responses.
+
+Each response contains ONLY ONE TOOL_CALL,
+but execution MUST continue until the full pipeline is complete
+
+---
+
+TAVILY MCP USAGE RULE:
+
+If task involves:
+- finding information on the web
+- searching for articles
+- extracting content from unknown URLs
+
+You MUST prefer:
+
+tavily-search → tavily-extract
+
+before using fetch_url from internal MCP.
 
 ---
 
@@ -236,6 +375,7 @@ SAFETY RULES:
 
 DOCUMENT SAVING WORKFLOW
 
+
 When the user expresses an intent to save, archive, store, collect, capture, persist, or add a web page to the document repository, and a URL is provided or can be identified, you MUST execute the complete document ingestion pipeline.
 
 Examples of such requests include:
@@ -249,9 +389,16 @@ Examples of such requests include:
 - Collect this article
 - Preserve this content
 
-For these requests, ALWAYS execute the tool chain in the following order:
+Pipeline can start from multiple sources:
 
+A) Internal MCP:
 fetch_url → extract_text → save_document
+
+B) Tavily MCP:
+tavily-search → tavily-extract → save_document
+
+In both cases:
+- final step MUST be save_document (internal MCP)
 
 - Do not skip any step.
 - Do not manually summarize, rewrite, or generate document content yourself.

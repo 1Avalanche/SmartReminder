@@ -23,8 +23,7 @@ class ToolCallingLoopTest {
         fakeSession: FakeSession,
         maxIterations: Int = 5
     ) = ToolCallingLoop(
-        serverName = "test-server",
-        session = fakeSession.asSession(),
+        sessions = mapOf("test-server" to fakeSession.asSession()),
         gateway = gateway,
         model = model,
         maxIterations = maxIterations
@@ -50,7 +49,7 @@ class ToolCallingLoopTest {
             "TOOL_CALL\ntool=search_repos\narguments={\"query\":\"kotlin\"}",
             "FINAL_ANSWER\nFound 3 repositories."
         )
-        val fakeSession = FakeSession(toolResult = "repo1, repo2, repo3")
+        val fakeSession = FakeSession(toolResult = "repo1, repo2, repo3", toolNames = listOf("search_repos"))
         val loop = makeLoop(gateway, fakeSession)
 
         val result = loop.run("find kotlin repos")
@@ -67,7 +66,7 @@ class ToolCallingLoopTest {
             "TOOL_CALL\ntool=my_tool\narguments={}",
             "FINAL_ANSWER\nDone."
         )
-        val fakeSession = FakeSession(toolResult = "result data")
+        val fakeSession = FakeSession(toolResult = "result data", toolNames = listOf("my_tool"))
         val loop = makeLoop(gateway, fakeSession)
 
         loop.run("query")
@@ -85,7 +84,7 @@ class ToolCallingLoopTest {
             "TOOL_CALL\ntool=broken_tool\narguments={}",
             "FINAL_ANSWER\nSorry, could not fetch."
         )
-        val fakeSession = FakeSession(toolThrows = RuntimeException("connection refused"))
+        val fakeSession = FakeSession(toolThrows = RuntimeException("connection refused"), toolNames = listOf("broken_tool"))
         val loop = makeLoop(gateway, fakeSession)
 
         val result = loop.run("query")
@@ -117,7 +116,7 @@ class ToolCallingLoopTest {
             "TOOL_CALL\ntool=tool_b\narguments={}",
             "FINAL_ANSWER\nBoth done."
         )
-        val fakeSession = FakeSession(toolResult = "ok")
+        val fakeSession = FakeSession(toolResult = "ok", toolNames = listOf("tool_a", "tool_b"))
         val loop = makeLoop(gateway, fakeSession)
 
         val result = loop.run("do both")
@@ -133,7 +132,8 @@ class ToolCallingLoopTest {
 class FakeSession(
     private val toolResult: String? = null,
     private val toolThrows: Exception? = null,
-    private val tools: List<McpTool> = emptyList()
+    private val tools: List<McpTool> = emptyList(),
+    private val toolNames: List<String> = emptyList()
 ) {
     var callCount = 0
     var lastToolName: String? = null
@@ -168,7 +168,7 @@ class FakeSession(
         }
     }
 
-    fun getTools(): List<McpTool> = tools
+    fun getTools(): List<McpTool> = tools + toolNames.map { McpTool(it, null, null) }
 }
 
 /**

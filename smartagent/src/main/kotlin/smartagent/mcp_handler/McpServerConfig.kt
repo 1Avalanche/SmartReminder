@@ -7,5 +7,6 @@ data class McpServerConfig(
     val command: List<String> = emptyList(),
     val workDir: String = System.getProperty("user.dir"),
     val transportMode: TransportMode = TransportMode.PROCESS,
-    val httpUrl: String? = null
+    val httpUrl: String? = null,
+    val apiKey: String? = null
 )

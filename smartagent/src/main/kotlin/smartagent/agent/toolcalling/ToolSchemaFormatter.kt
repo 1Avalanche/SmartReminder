@@ -3,8 +3,8 @@ package smartagent.agent.toolcalling
 import smartagent.mcp_handler.McpTool
 import smartagent.mcp_handler.parseSchemaParams
 
-fun formatToolsForPrompt(serverName: String, tools: List<McpTool>): String {
-    if (tools.isEmpty()) return "(no tools available on $serverName)"
+fun formatToolsForPrompt(tools: List<McpTool>): String {
+    if (tools.isEmpty()) return "(no tools available)"
     return tools.joinToString("\n\n") { tool ->
         buildString {
             appendLine("Tool: ${tool.name}")

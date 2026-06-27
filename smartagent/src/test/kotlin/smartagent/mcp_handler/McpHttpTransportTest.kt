@@ -185,4 +185,97 @@ class McpHttpTransportTest {
             assertNull(req.getHeader("Authorization"), "Authorization must be absent when no api key")
         }
     }
+
+    // ─── Accept header ────────────────────────────────────────────────────────
+
+    @Test
+    fun `Accept header includes text event-stream`() {
+        server.enqueue(MockResponse().setBody(
+            buildJsonObject { put("jsonrpc", "2.0"); put("id", 1); put("result", buildJsonObject {}) }.toString()
+        ).setResponseCode(200))
+
+        transport.send(JsonRpcSerializer.buildRequest(1, "initialize"))
+        val recorded = server.takeRequest()
+        val accept = recorded.getHeader("Accept") ?: ""
+        assert(accept.contains("text/event-stream")) { "Accept must include text/event-stream, was: $accept" }
+        assert(accept.contains("application/json")) { "Accept must include application/json, was: $accept" }
+    }
+
+    // ─── SSE response parsing ─────────────────────────────────────────────────
+
+    @Test
+    fun `SSE response data line is extracted and enqueued as plain JSON`() {
+        val jsonPayload = buildJsonObject {
+            put("jsonrpc", "2.0")
+            put("id", 1)
+            put("result", buildJsonObject { put("protocolVersion", "2024-11-05") })
+        }.toString()
+        val sseBody = "event: message\ndata: $jsonPayload\n\n"
+
+        server.enqueue(MockResponse().setBody(sseBody).setResponseCode(200)
+            .setHeader("Content-Type", "text/event-stream"))
+
+        transport.send(JsonRpcSerializer.buildRequest(1, "initialize"))
+        val line = transport.pollLine(3_000)
+        assertNotNull(line, "SSE data line must be enqueued")
+
+        val parsed = Json.parseToJsonElement(line).jsonObject
+        assertEquals(1, parsed["id"]?.jsonPrimitive?.content?.toIntOrNull())
+        assertNotNull(parsed["result"])
+    }
+
+    @Test
+    fun `SSE response with multiple data lines enqueues each`() {
+        val msg1 = """{"jsonrpc":"2.0","id":1,"result":{}}"""
+        val msg2 = """{"jsonrpc":"2.0","id":2,"result":{}}"""
+        val sseBody = "data: $msg1\n\ndata: $msg2\n\n"
+
+        server.enqueue(MockResponse().setBody(sseBody).setResponseCode(200))
+
+        transport.send(JsonRpcSerializer.buildRequest(1, "initialize"))
+        val line1 = transport.pollLine(3_000)
+        val line2 = transport.pollLine(3_000)
+        assertNotNull(line1)
+        assertNotNull(line2)
+    }
+
+    @Test
+    fun `SSE DONE sentinel is not enqueued`() {
+        val sseBody = "data: [DONE]\n\n"
+        server.enqueue(MockResponse().setBody(sseBody).setResponseCode(200))
+
+        transport.send(JsonRpcSerializer.buildRequest(1, "initialize"))
+        val line = transport.pollLine(200)
+        assertNull(line, "[DONE] sentinel must not be enqueued")
+    }
+
+    // ─── extractJsonLines unit tests ──────────────────────────────────────────
+
+    @Test
+    fun `extractJsonLines passthrough plain JSON`() {
+        val json = """{"jsonrpc":"2.0","id":1,"result":{}}"""
+        val result = McpHttpTransport.extractJsonLines(json)
+        assertEquals(listOf(json), result)
+    }
+
+    @Test
+    fun `extractJsonLines extracts data line from SSE`() {
+        val payload = """{"jsonrpc":"2.0","id":1,"result":{}}"""
+        val sse = "event: message\ndata: $payload\n\n"
+        val result = McpHttpTransport.extractJsonLines(sse)
+        assertEquals(listOf(payload), result)
+    }
+
+    @Test
+    fun `extractJsonLines skips DONE sentinel`() {
+        val result = McpHttpTransport.extractJsonLines("data: [DONE]\n\n")
+        assertEquals(emptyList(), result)
+    }
+
+    @Test
+    fun `extractJsonLines handles leading whitespace in JSON body`() {
+        val json = """  {"jsonrpc":"2.0","id":1,"result":{}}"""
+        val result = McpHttpTransport.extractJsonLines(json)
+        assertEquals(listOf(json), result)
+    }
 }

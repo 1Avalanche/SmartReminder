@@ -22,7 +22,6 @@ import java.io.File
 fun main(args: Array<String>) {
     setupKeysIfNeeded()
     val parsedArgs = parseArgs(args)
-    println("MCP_SERVER_URL = ${System.getenv("MCP_SERVER_URL")}")
     println("TELEGRAM_BOT_TOKEN = ${System.getenv("TELEGRAM_BOT_TOKEN")}")
     val session = ChatSession()
     session.switchModel(parsedArgs.model ?: Config.loadLastModel() ?: ModelConfig.DEEPSEEK)
@@ -52,6 +51,8 @@ fun main(args: Array<String>) {
     val validationAgent = ValidationAgent(session.config, session.tokens, taskRepository, gateway)
     val architectOrchestrator = ArchitectOrchestrator(session, featureRepository, taskRepository, invariantAgent, planningAgent, executionAgent, validationAgent, gateway, session.config, session.tokens)
 
+    McpManager.initRemoteServers()
+
     when (session.currentMode) {
         AgentMode.ARCHITECT -> {
             println("${Colors.DARK_GRAY}Model: ${session.currentModel.shortName} | Mode: ${session.currentMode.displayName}")
@@ -59,7 +60,6 @@ fun main(args: Array<String>) {
             architectOnboarding.startSession(featureRepository.getActiveFeature() != null)
         }
         AgentMode.ASSIST -> {
-            AssistRepl.handle("mcp github-remote init")
             println("${Colors.LIGHT_YELLOW}SmartAgent — Assist mode${Colors.RESET}")
             println("${Colors.DARK_GRAY}Type '/mcp list' to see servers, /help for all commands, /exit to quit.${Colors.RESET}\n")
         }
@@ -72,6 +72,7 @@ fun main(args: Array<String>) {
 
     val telegramToken = Config.localProperties["TELEGRAM_BOT_TOKEN"] ?: System.getenv("TELEGRAM_BOT_TOKEN")
     if (telegramToken != null) {
+        println("${Colors.DARK_GRAY}Starting Telegram bot...${Colors.RESET}")
         runBlocking {
             TelegramBotRunner(telegramToken, gateway, session.currentModel).start(this)
             println("${Colors.LIGHT_GREEN}Telegram bot started.${Colors.RESET}")

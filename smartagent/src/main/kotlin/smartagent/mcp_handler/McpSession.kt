@@ -33,7 +33,7 @@ class McpSession(
             }
             TransportMode.HTTP -> McpHttpTransport(
                 serverUrl = config.httpUrl ?: error("httpUrl required for HTTP transport"),
-                apiKey = McpRemoteConfig.apiKey
+                apiKey = config.apiKey
             )
         }
 
