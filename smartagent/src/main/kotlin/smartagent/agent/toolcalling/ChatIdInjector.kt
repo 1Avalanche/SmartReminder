@@ -1,6 +1,7 @@
 package smartagent.agent.toolcalling
 
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
 
 /**
@@ -23,11 +24,11 @@ object ChatIdInjector {
      * Injects chat_id into [args] if [toolName] is in [allowedTools] and [chatId] is non-null.
      * Returns true if chat_id was injected.
      */
-    fun enrich(toolName: String, args: MutableMap<String, String>, chatId: Long?): Boolean {
+    fun enrich(toolName: String, args: MutableMap<String, JsonElement>, chatId: Long?): Boolean {
         if (chatId == null) return false
         if (toolName !in allowedTools) return false
         if ("chat_id" in args) return false
-        args["chat_id"] = chatId.toString()
+        args["chat_id"] = JsonPrimitive(chatId.toString())
         return true
     }
 
@@ -35,7 +36,7 @@ object ChatIdInjector {
      * Strips keys from [args] that are not declared in the tool's inputSchema properties.
      * No-ops if schema is null or has no properties — unknown schema means no stripping.
      */
-    fun stripUnknownArgs(inputSchema: JsonElement?, args: Map<String, String>): Map<String, String> {
+    fun stripUnknownArgs(inputSchema: JsonElement?, args: Map<String, JsonElement>): Map<String, JsonElement> {
         val properties = inputSchema?.jsonObject?.get("properties")?.jsonObject ?: return args
         return args.filter { (key, _) -> key in properties }
     }

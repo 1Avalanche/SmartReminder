@@ -1,5 +1,7 @@
 package smartagent.agent.toolcalling
 
+import kotlinx.serialization.json.JsonElement
+
 /**
  * Tracks tool failure state during a single ToolCallingLoop run.
  * Not thread-safe — one instance per run() call.
@@ -36,10 +38,10 @@ class ToolFailureEngine(allToolNames: Set<String>) {
     fun isDisabled(toolName: String): Boolean = states[toolName]?.disabled == true
 
     /** Returns true if this exact (tool, args) pair was already attempted this run. */
-    fun isAlreadyCalled(toolName: String, args: Map<String, String>): Boolean =
+    fun isAlreadyCalled(toolName: String, args: Map<String, JsonElement>): Boolean =
         callSignature(toolName, args) in calledSignatures
 
-    fun markCalled(toolName: String, args: Map<String, String>) {
+    fun markCalled(toolName: String, args: Map<String, JsonElement>) {
         calledSignatures.add(callSignature(toolName, args))
     }
 
@@ -104,7 +106,7 @@ class ToolFailureEngine(allToolNames: Set<String>) {
         }.trimEnd()
     }
 
-    private fun callSignature(toolName: String, args: Map<String, String>): String {
+    private fun callSignature(toolName: String, args: Map<String, JsonElement>): String {
         val sortedArgs = args.entries.sortedBy { it.key }.joinToString(",") { "${it.key}=${it.value}" }
         return "$toolName|$sortedArgs"
     }

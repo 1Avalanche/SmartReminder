@@ -1,5 +1,7 @@
 package smartagent.agent.toolcalling
 
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import org.junit.Test
@@ -13,15 +15,15 @@ class ChatIdInjectorTest {
 
     @Test
     fun `injects chat_id for allowed tool`() {
-        val args = mutableMapOf("text" to "hello")
+        val args = mutableMapOf<String, JsonElement>("text" to JsonPrimitive("hello"))
         val injected = ChatIdInjector.enrich("create_reminder", args, chatId = 42L)
         assertTrue(injected)
-        assertEquals("42", args["chat_id"])
+        assertEquals(JsonPrimitive("42"), args["chat_id"])
     }
 
     @Test
     fun `does NOT inject for external tool`() {
-        val args = mutableMapOf("query" to "AI agents")
+        val args = mutableMapOf<String, JsonElement>("query" to JsonPrimitive("AI agents"))
         val injected = ChatIdInjector.enrich("tavily-search", args, chatId = 42L)
         assertFalse(injected)
         assertFalse("chat_id" in args)
@@ -29,7 +31,7 @@ class ChatIdInjectorTest {
 
     @Test
     fun `does NOT inject when chatId is null`() {
-        val args = mutableMapOf("text" to "hello")
+        val args = mutableMapOf<String, JsonElement>("text" to JsonPrimitive("hello"))
         val injected = ChatIdInjector.enrich("create_reminder", args, chatId = null)
         assertFalse(injected)
         assertFalse("chat_id" in args)
@@ -37,16 +39,19 @@ class ChatIdInjectorTest {
 
     @Test
     fun `does NOT overwrite existing chat_id`() {
-        val args = mutableMapOf("text" to "hello", "chat_id" to "99")
+        val args = mutableMapOf<String, JsonElement>(
+            "text" to JsonPrimitive("hello"),
+            "chat_id" to JsonPrimitive("99")
+        )
         val injected = ChatIdInjector.enrich("create_reminder", args, chatId = 42L)
         assertFalse(injected)
-        assertEquals("99", args["chat_id"])
+        assertEquals(JsonPrimitive("99"), args["chat_id"])
     }
 
     @Test
     fun `all allowedTools receive injection`() {
         ChatIdInjector.allowedTools.forEach { toolName ->
-            val args = mutableMapOf<String, String>()
+            val args = mutableMapOf<String, JsonElement>()
             val injected = ChatIdInjector.enrich(toolName, args, chatId = 1L)
             assertTrue(injected, "Expected injection for $toolName")
         }
@@ -69,9 +74,9 @@ class ChatIdInjectorTest {
                 put("query", buildJsonObject { put("type", "string") })
             })
         }
-        val args = mapOf("query" to "AI agents", "chat_id" to "42")
+        val args = mapOf<String, JsonElement>("query" to JsonPrimitive("AI agents"), "chat_id" to JsonPrimitive("42"))
         val result = ChatIdInjector.stripUnknownArgs(schema, args)
-        assertEquals(mapOf("query" to "AI agents"), result)
+        assertEquals(mapOf<String, JsonElement>("query" to JsonPrimitive("AI agents")), result)
     }
 
     @Test
@@ -83,14 +88,14 @@ class ChatIdInjectorTest {
                 put("chat_id", buildJsonObject { put("type", "string") })
             })
         }
-        val args = mapOf("text" to "hello", "chat_id" to "42")
+        val args = mapOf<String, JsonElement>("text" to JsonPrimitive("hello"), "chat_id" to JsonPrimitive("42"))
         val result = ChatIdInjector.stripUnknownArgs(schema, args)
         assertEquals(args, result)
     }
 
     @Test
     fun `no-ops when schema is null`() {
-        val args = mapOf("query" to "AI", "chat_id" to "42")
+        val args = mapOf<String, JsonElement>("query" to JsonPrimitive("AI"), "chat_id" to JsonPrimitive("42"))
         val result = ChatIdInjector.stripUnknownArgs(null, args)
         assertEquals(args, result)
     }
@@ -98,7 +103,7 @@ class ChatIdInjectorTest {
     @Test
     fun `no-ops when schema has no properties key`() {
         val schema = buildJsonObject { put("type", "object") }
-        val args = mapOf("query" to "AI", "chat_id" to "42")
+        val args = mapOf<String, JsonElement>("query" to JsonPrimitive("AI"), "chat_id" to JsonPrimitive("42"))
         val result = ChatIdInjector.stripUnknownArgs(schema, args)
         assertEquals(args, result)
     }
@@ -111,7 +116,7 @@ class ChatIdInjectorTest {
                 put("b", buildJsonObject {})
             })
         }
-        val args = mapOf("a" to "1", "b" to "2")
+        val args = mapOf<String, JsonElement>("a" to JsonPrimitive("1"), "b" to JsonPrimitive("2"))
         val result = ChatIdInjector.stripUnknownArgs(schema, args)
         assertEquals(args, result)
     }

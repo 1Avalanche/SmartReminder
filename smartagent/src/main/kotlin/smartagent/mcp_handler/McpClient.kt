@@ -54,7 +54,7 @@ class McpClient(private val transport: McpTransport) : AutoCloseable {
     }
 
     /** Calls a tool by name and returns the raw result element. */
-    fun callTool(name: String, arguments: Map<String, String> = emptyMap()): JsonElement? {
+    fun callTool(name: String, arguments: Map<String, JsonElement> = emptyMap()): JsonElement? {
         val id = nextId.getAndIncrement()
         val params = buildJsonObject {
             put("name", name)

@@ -1,5 +1,7 @@
 package smartagent.agent.toolcalling
 
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonPrimitive
 import org.junit.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -67,13 +69,13 @@ class ToolFailureEngineTest {
     @Test
     fun `isAlreadyCalled returns false before first call`() {
         val e = engine("tavily_search")
-        assertFalse(e.isAlreadyCalled("tavily_search", mapOf("query" to "AI")))
+        assertFalse(e.isAlreadyCalled("tavily_search", mapOf("query" to JsonPrimitive("AI"))))
     }
 
     @Test
     fun `isAlreadyCalled returns true after markCalled`() {
         val e = engine("tavily_search")
-        val args = mapOf("query" to "AI agents")
+        val args = mapOf<String, JsonElement>("query" to JsonPrimitive("AI agents"))
         e.markCalled("tavily_search", args)
         assertTrue(e.isAlreadyCalled("tavily_search", args))
     }
@@ -81,22 +83,22 @@ class ToolFailureEngineTest {
     @Test
     fun `isAlreadyCalled false for different args`() {
         val e = engine("tavily_search")
-        e.markCalled("tavily_search", mapOf("query" to "AI"))
-        assertFalse(e.isAlreadyCalled("tavily_search", mapOf("query" to "robots")))
+        e.markCalled("tavily_search", mapOf("query" to JsonPrimitive("AI")))
+        assertFalse(e.isAlreadyCalled("tavily_search", mapOf("query" to JsonPrimitive("robots"))))
     }
 
     @Test
     fun `isAlreadyCalled false for different tool same args`() {
         val e = engine("tavily_search", "fetch_url")
-        e.markCalled("tavily_search", mapOf("query" to "AI"))
-        assertFalse(e.isAlreadyCalled("fetch_url", mapOf("query" to "AI")))
+        e.markCalled("tavily_search", mapOf("query" to JsonPrimitive("AI")))
+        assertFalse(e.isAlreadyCalled("fetch_url", mapOf("query" to JsonPrimitive("AI"))))
     }
 
     @Test
     fun `isAlreadyCalled independent of arg order`() {
         val e = engine("some_tool")
-        e.markCalled("some_tool", mapOf("b" to "2", "a" to "1"))
-        assertTrue(e.isAlreadyCalled("some_tool", mapOf("a" to "1", "b" to "2")))
+        e.markCalled("some_tool", mapOf("b" to JsonPrimitive("2"), "a" to JsonPrimitive("1")))
+        assertTrue(e.isAlreadyCalled("some_tool", mapOf("a" to JsonPrimitive("1"), "b" to JsonPrimitive("2"))))
     }
 
     // ─── replan messages ──────────────────────────────────────────────────────

@@ -96,7 +96,7 @@ class ToolCallingLoopTest {
     }
 
     @Test
-    fun `maxIterations exceeded returns exhaustion message`() {
+    fun `maxIterations exceeded returns user-friendly message`() {
         // LLM always returns TOOL_CALL — never FINAL_ANSWER
         val responses = Array(10) { "TOOL_CALL\ntool=search\narguments={}" }
         val gateway = FakeLLMGateway(*responses)
@@ -105,8 +105,71 @@ class ToolCallingLoopTest {
 
         val result = loop.run("query")
 
-        assertTrue(result.contains("exceeded") || result.contains("maximum"))
+        assertTrue(OutputValidator.isSafeForUser(result))
+        assertTrue(result.isNotBlank())
         assertEquals(3, gateway.callCount)
+    }
+
+    @Test
+    fun `ParseError with long natural language text returns it directly`() {
+        val naturalText = "По запросу ничего не нашлось. Возможно, в названии ошибка. Уточните, пожалуйста, домен сайта."
+        val gateway = FakeLLMGateway(naturalText)
+        val fakeSession = FakeSession()
+        val loop = makeLoop(gateway, fakeSession)
+
+        val result = loop.run("find modiledeveloper")
+
+        assertEquals(naturalText, result)
+        assertEquals(1, gateway.callCount)
+    }
+
+    @Test
+    fun `ParseError with short text still triggers recovery prompt`() {
+        val shortText = "Уточните."  // < 60 chars
+        val gateway = FakeLLMGateway(shortText, "FINAL_ANSWER\nОК.")
+        val fakeSession = FakeSession()
+        val loop = makeLoop(gateway, fakeSession)
+
+        val result = loop.run("query")
+
+        assertEquals("ОК.", result)
+        assertEquals(2, gateway.callCount)
+    }
+
+    @Test
+    fun `ParseError with TOOL_CALL fragment still triggers recovery prompt`() {
+        val malformed = "I want to TOOL_CALL search but I forgot the format and wrote this long paragraph here."
+        val gateway = FakeLLMGateway(malformed, "FINAL_ANSWER\nDone.")
+        val fakeSession = FakeSession()
+        val loop = makeLoop(gateway, fakeSession)
+
+        val result = loop.run("query")
+
+        assertEquals("Done.", result)
+        assertEquals(2, gateway.callCount)
+    }
+
+    @Test
+    fun `tavily_extract with list arg preserves array type in MCP payload`() {
+        // LLM outputs urls as a JSON array — must arrive at MCP as array, not string
+        val gateway = FakeLLMGateway(
+            """TOOL_CALL
+tool=tavily_extract
+arguments={"urls":["https://example.com"]}""",
+            "FINAL_ANSWER\nExtracted."
+        )
+        val fakeSession = FakeSession(
+            toolResult = "page content",
+            toolNames = listOf("tavily_extract")
+        )
+        fakeSession.expectArrayArg = true
+        val loop = makeLoop(gateway, fakeSession)
+
+        val result = loop.run("extract https://example.com")
+
+        assertEquals("Extracted.", result)
+        assertEquals(1, fakeSession.callCount)
+        assertTrue(fakeSession.lastArgsWereArray, "urls arg must be JsonArray, not String")
     }
 
     @Test
@@ -137,6 +200,8 @@ class FakeSession(
 ) {
     var callCount = 0
     var lastToolName: String? = null
+    var expectArrayArg: Boolean = false
+    var lastArgsWereArray: Boolean = false
 
     fun asSession(): McpSession {
         val config = McpServerConfig(name = "test-server")
@@ -200,10 +265,13 @@ private class FakeSessionTransport(private val fake: FakeSession) : smartagent.m
                 queue.put("""{"jsonrpc":"2.0","id":$id,"result":{"tools":[$toolsJson]}}""")
             }
             "tools/call" -> {
-                val nameEl = parsed["params"]?.let { p ->
-                    (p as? kotlinx.serialization.json.JsonObject)?.get("name")
+                val params = parsed["params"] as? kotlinx.serialization.json.JsonObject
+                val toolName = (params?.get("name") as? kotlinx.serialization.json.JsonPrimitive)?.content ?: "unknown"
+                if (fake.expectArrayArg) {
+                    val argsObj = params?.get("arguments") as? kotlinx.serialization.json.JsonObject
+                    val urlsArg = argsObj?.get("urls")
+                    fake.lastArgsWereArray = urlsArg is kotlinx.serialization.json.JsonArray
                 }
-                val toolName = (nameEl as? kotlinx.serialization.json.JsonPrimitive)?.content ?: "unknown"
                 try {
                     val result = fake.executeCall(toolName)
                     val resultJson = result?.toString() ?: "null"

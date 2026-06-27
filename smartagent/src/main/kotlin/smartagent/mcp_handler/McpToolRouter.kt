@@ -1,6 +1,7 @@
 package smartagent.mcp_handler
 
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonPrimitive
 
 sealed class ToolCallResult {
     data class Success(val result: JsonElement) : ToolCallResult()
@@ -15,7 +16,7 @@ object McpToolRouter {
             return ToolCallResult.Error("$serverName not connected. Run: /mcp $serverName init")
         }
         return try {
-            val result = session.callTool(toolName, args)
+            val result = session.callTool(toolName, args.mapValues { JsonPrimitive(it.value) })
                 ?: return ToolCallResult.Error("Tool call returned no result (timeout or unknown tool \"$toolName\")")
             ToolCallResult.Success(result)
         } catch (e: Exception) {

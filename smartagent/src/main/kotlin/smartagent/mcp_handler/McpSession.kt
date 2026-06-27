@@ -1,6 +1,7 @@
 package smartagent.mcp_handler
 
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonPrimitive
 
 enum class McpConnectionState { DISCONNECTED, CONNECTING, CONNECTED }
 
@@ -52,7 +53,7 @@ class McpSession(
     fun listTools(): List<McpTool> =
         client?.listTools() ?: emptyList()
 
-    fun callTool(toolName: String, arguments: Map<String, String> = emptyMap()): JsonElement? =
+    fun callTool(toolName: String, arguments: Map<String, JsonElement> = emptyMap()): JsonElement? =
         client?.callTool(toolName, arguments)
 
     override fun close() {

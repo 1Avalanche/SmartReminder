@@ -1,5 +1,7 @@
 package smartagent.mcp_handler
 
+import kotlinx.serialization.json.JsonPrimitive
+
 fun main() {
     val command = listOf("npx", "-y", "@modelcontextprotocol/server-filesystem", ".")
     val workDir = System.getProperty("user.dir")
@@ -31,7 +33,7 @@ fun main() {
             // Bonus: demo callTool — list current directory
             println()
             println("Demo — calling list_directory on \".\":")
-            val result = client.callTool("list_directory", mapOf("path" to workDir))
+            val result = client.callTool("list_directory", mapOf("path" to JsonPrimitive(workDir)))
             result?.let { println(it) }
         }
     }
