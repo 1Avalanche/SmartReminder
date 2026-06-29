@@ -35,6 +35,7 @@ class IndexCommandHandler {
         val documents = loader.load()
         println(" ${documents.size} found")
 
+
         print("Chunking...")
         val chunks = chunker.chunk(documents)
         println(" ${chunks.size} chunks")

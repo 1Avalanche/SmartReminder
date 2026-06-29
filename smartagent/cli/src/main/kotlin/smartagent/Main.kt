@@ -33,7 +33,7 @@ fun main(args: Array<String>) {
         }
     }
 
-    val targetMode = parsedArgs.initialMode ?: AgentMode.ASSIST
+    val targetMode = parsedArgs.initialMode ?: AgentMode.INDEX
     if (session.currentMode != targetMode) session.switchMode(targetMode)
 
     val client = ChatClient(session)
@@ -198,8 +198,14 @@ private fun runRepl(
                 println("${Colors.LIGHT_GREEN}Path set: $indexPath${Colors.RESET}")
             }
             input.startsWith("/index-strategy ") -> {
-                indexStrategy = input.removePrefix("/index-strategy ").trim()
-                println("${Colors.LIGHT_GREEN}Strategy set: $indexStrategy${Colors.RESET}")
+                val strategy = input.removePrefix("/index-strategy ").trim()
+                val validStrategies = setOf("fixed", "structured")
+                if (strategy !in validStrategies) {
+                    println("${Colors.LIGHT_YELLOW}Unknown strategy: $strategy. Valid: ${validStrategies.joinToString("|")}${Colors.RESET}")
+                } else {
+                    indexStrategy = strategy
+                    println("${Colors.LIGHT_GREEN}Strategy set: $indexStrategy${Colors.RESET}")
+                }
             }
             input == "/index-run" -> runIndexing(indexPath, indexStrategy)
             // MCP commands — available in any mode

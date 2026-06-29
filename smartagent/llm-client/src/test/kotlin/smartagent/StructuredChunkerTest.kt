@@ -119,4 +119,92 @@ class StructuredChunkerTest {
         assertEquals("docs/doc.md", chunks[0].metadata.documentSource)
         assertEquals("md", chunks[0].metadata.extension)
     }
+
+    // --- code mode ---
+
+    private fun codeDoc(content: String, ext: String = "kt") = Document(
+        id = "Main.$ext",
+        title = "Main.$ext",
+        content = content,
+        metadata = DocumentMetadata(source = "src/Main.$ext", extension = ext)
+    )
+
+    @Test
+    fun `kt file splits at top-level class and function`() {
+        val content = """
+            class Foo {
+                fun bar() {}
+            }
+
+            fun topLevel() {
+                val x = 1
+            }
+        """.trimIndent()
+        val chunks = chunker.chunk(listOf(codeDoc(content)))
+        assertEquals(2, chunks.size)
+        assertTrue("class Foo" in chunks[0].content)
+        assertTrue("fun topLevel" in chunks[1].content)
+    }
+
+    @Test
+    fun `kt file indented methods separated by blank lines split into chunks`() {
+        val content = """
+            class Foo {
+
+                fun bar() {}
+
+                fun baz() {}
+            }
+        """.trimIndent()
+        val chunks = chunker.chunk(listOf(codeDoc(content)))
+        assertEquals(3, chunks.size)
+        assertTrue("class Foo" in chunks[0].content)
+        assertTrue("fun bar" in chunks[1].content)
+        assertTrue("fun baz" in chunks[2].content)
+    }
+
+    @Test
+    fun `kt file methods without blank line stay in same chunk`() {
+        val content = """
+            class Foo {
+                fun bar() {}
+                fun baz() {}
+            }
+        """.trimIndent()
+        val chunks = chunker.chunk(listOf(codeDoc(content)))
+        assertEquals(1, chunks.size)
+        assertTrue("fun bar" in chunks[0].content)
+        assertTrue("fun baz" in chunks[0].content)
+    }
+
+    @Test
+    fun `md file still uses header splitting not code mode`() {
+        val chunks = chunker.chunk(listOf(doc("# Section\ntext.")))
+        assertEquals(listOf("Section"), chunks[0].metadata.sectionPath)
+    }
+
+    @Test
+    fun `unknown extension uses paragraph fallback`() {
+        val txtDoc = Document(
+            id = "file.txt",
+            title = "file.txt",
+            content = "First paragraph.\n\nSecond paragraph.",
+            metadata = DocumentMetadata(source = "file.txt", extension = "txt")
+        )
+        val chunks = chunker.chunk(listOf(txtDoc))
+        assertEquals(2, chunks.size)
+        assertEquals("First paragraph.", chunks[0].content)
+    }
+
+    @Test
+    fun `null extension uses paragraph fallback`() {
+        val noExtDoc = Document(
+            id = "Makefile",
+            title = "Makefile",
+            content = "all:\n\techo done\n\nclean:\n\trm -rf build",
+            metadata = DocumentMetadata(source = "Makefile", extension = null)
+        )
+        val chunks = chunker.chunk(listOf(noExtDoc))
+        assertEquals(2, chunks.size)
+    }
 }

@@ -1,14 +1,34 @@
 package smartagent
 
+import java.io.File
+
 class StructuredChunker : Chunker {
 
     private val headerRegex = Regex("^(#{1,6})\\s+(.+)")
 
-    override fun chunk(documents: List<Document>): List<Chunk> =
-        documents.flatMap { document -> chunkDocument(document) }
+    private val declarationRegex = Regex(
+        """^\s*(?:(?:private|public|internal|protected|override|suspend|abstract|open|sealed|data|inline|actual|const)\s+)*""" +
+        """(?:fun|class|object|interface|enum\s+class|enum|def)\b"""
+    )
 
-    private fun chunkDocument(document: Document): List<Chunk> =
-        extractSections(document.content).mapIndexed { index, (path, text) ->
+    private val markdownExtensions = setOf("md", "markdown")
+    private val codeExtensions = setOf(
+        "kt", "kts", "java", "py", "js", "ts", "jsx", "tsx",
+        "go", "rs", "cpp", "c", "cs", "swift", "scala", "rb", "sh"
+    )
+
+    override fun chunk(documents: List<Document>): List<Chunk> {
+        return documents.flatMap { document -> chunkDocument(document) }
+    }
+
+    private fun chunkDocument(document: Document): List<Chunk> {
+        val ext = document.metadata.extension
+        val sections = when {
+            ext in markdownExtensions -> extractMarkdownSections(document.content)
+            ext in codeExtensions     -> extractCodeSections(document.content)
+            else                      -> extractParagraphSections(document.content)
+        }
+        return sections.mapIndexed { index, (path, text) ->
             Chunk(
                 id = "${document.id}_$index",
                 content = text,
@@ -22,15 +42,13 @@ class StructuredChunker : Chunker {
                 )
             )
         }
+    }
 
-    private fun extractSections(content: String): List<Pair<List<String>, String>> {
+    private fun extractMarkdownSections(content: String): List<Pair<List<String>, String>> {
         val lines = content.lines()
 
         if (lines.none { headerRegex.containsMatchIn(it) }) {
-            return content.split("\n\n")
-                .map { it.trim() }
-                .filter { it.isNotEmpty() }
-                .map { emptyList<String>() to it }
+            return extractParagraphSections(content)
         }
 
         val sections = mutableListOf<Pair<List<String>, String>>()
@@ -50,7 +68,7 @@ class StructuredChunker : Chunker {
                 flush()
                 val level = match.groupValues[1].length
                 hierarchy[level - 1] = match.groupValues[2].trim()
-                for (i in level until 6) hierarchy[i] = null
+                for (i in level until hierarchy.size) hierarchy[i] = null
                 currentPath = hierarchy.take(level).filterNotNull()
             } else {
                 currentContent.appendLine(line)
@@ -60,4 +78,31 @@ class StructuredChunker : Chunker {
 
         return sections
     }
+
+    private fun extractCodeSections(content: String): List<Pair<List<String>, String>> {
+        val sections = mutableListOf<String>()
+        val current = StringBuilder()
+        var prevBlank = false
+
+        for (line in content.lines()) {
+            val isBlank = line.isBlank()
+            val isDeclaration = !isBlank && declarationRegex.containsMatchIn(line)
+            if (prevBlank && isDeclaration && current.isNotBlank()) {
+                sections.add(current.toString().trim())
+                current.clear()
+            }
+            current.appendLine(line)
+            prevBlank = isBlank
+        }
+        val last = current.toString().trim()
+        if (last.isNotEmpty()) sections.add(last)
+
+        return sections.map { emptyList<String>() to it }
+    }
+
+    private fun extractParagraphSections(content: String): List<Pair<List<String>, String>> =
+        content.split("\n\n")
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+            .map { emptyList<String>() to it }
 }
