@@ -1,0 +1,55 @@
+[ArchitectOrchestrator]
+=== 2026-06-29 20:13:02 ===
+SWITCH_TASK: task-001 → task-002 | Task Two
+========================================
+
+[ArchitectOrchestrator]
+=== 2026-06-29 20:13:03 ===
+EXECUTION → VALIDATION: task-001 | My Task
+========================================
+
+[ArchitectOrchestrator]
+=== 2026-06-29 20:13:03 ===
+PLANNING → EXECUTION: task-001 | My Task
+========================================
+
+[ArchitectOrchestrator]
+=== 2026-06-29 20:13:03 ===
+ExecutionAgent LLM empty content, retry 1/3: task-001
+========================================
+
+[ArchitectOrchestrator]
+=== 2026-06-29 20:13:03 ===
+ExecutionAgent LLM null response, retry 2/3: task-001
+========================================
+
+[ArchitectOrchestrator]
+=== 2026-06-29 20:13:03 ===
+ExecutionAgent LLM null response, retry 3/3: task-001
+========================================
+
+[ArchitectOrchestrator]
+=== 2026-06-29 20:13:04 ===
+CREATE_TASK: task-001 | featureId=feature-001 | Авторизация
+========================================
+
+[FSM_GUARD]
+=== 2026-06-29 20:13:05 ===
+REJECTED: PLANNING → VALIDATION (task task-001)
+========================================
+
+[FSM_GUARD]
+=== 2026-06-29 20:13:05 ===
+REJECTED: PLANNING → DONE (task task-001)
+========================================
+
+[FSM_GUARD]
+=== 2026-06-29 20:13:05 ===
+REJECTED: EXECUTION → PLANNING (task task-001)
+========================================
+
+[FSM_GUARD]
+=== 2026-06-29 20:13:05 ===
+REJECTED: VALIDATION → PLANNING (task task-001)
+========================================
+
