@@ -1,7 +1,8 @@
 package smartagent
 
 class Indexer(
-    private val loader: DocumentLoader
+    private val loader: DocumentLoader,
+    private val chunker: Chunker
 ) {
-    fun index(): List<Document> = loader.load()
+    fun index(): List<Chunk> = chunker.chunk(loader.load())
 }
