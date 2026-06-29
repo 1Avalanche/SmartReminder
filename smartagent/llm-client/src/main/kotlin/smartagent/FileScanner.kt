@@ -11,7 +11,7 @@ class FileScanner(
         val DEFAULT_IGNORED_DIRS = setOf(
             ".git", "build", ".gradle", "node_modules", ".idea",
             "__pycache__", "out", ".dart_tool", ".pub-cache", ".build",
-            "DerivedData", ".swiftpm", "Pods"
+            "DerivedData", ".swiftpm", "Pods", ".indexed"
         )
         val DEFAULT_BINARY_EXTENSIONS = setOf(
             "png", "jpg", "jpeg", "gif", "ico", "bmp", "webp",

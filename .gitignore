@@ -26,3 +26,4 @@ smartagent/arch_tasks.json
 smartagent/architect/*
 /smartagent/architect/
 smartagent/user_profile.md
+smartagent/.indexed

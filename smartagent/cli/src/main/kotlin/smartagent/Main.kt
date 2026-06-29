@@ -103,6 +103,9 @@ private fun runRepl(
     invariantAgent: InvariantAgent,
     gateway: LLMGateway
 ) {
+    var indexPath: String? = null
+    var indexStrategy = "fixed"
+
     while (true) {
         print("${Colors.BRIGHT_WHITE}> ")
         System.out.flush()
@@ -157,6 +160,7 @@ private fun runRepl(
                 when (session.currentMode) {
                     AgentMode.ARCHITECT -> architectOnboarding.startSession(featureRepository.getActiveFeature() != null)
                     AgentMode.ASSIST -> println("${Colors.DARK_GRAY}Assist mode. Type '/mcp list' to start.${Colors.RESET}")
+                    AgentMode.INDEX -> println("${Colors.DARK_GRAY}Index mode. Set /index-path, /index-strategy, /index-output, then /index-run.${Colors.RESET}")
                     else -> {}
                 }
             }
@@ -187,6 +191,17 @@ private fun runRepl(
             input == "/debug task history" -> debugTaskHistory(featureRepository, taskRepository)
             input == "/debug task artifact" -> debugTaskArtifact(featureRepository, taskRepository)
             input == "/debug task review" -> debugTaskReview(featureRepository, taskRepository)
+            // Index mode commands
+            input == "/index-status" -> showIndexStatus(indexPath, indexStrategy)
+            input.startsWith("/index-path ") -> {
+                indexPath = input.removePrefix("/index-path ").trim()
+                println("${Colors.LIGHT_GREEN}Path set: $indexPath${Colors.RESET}")
+            }
+            input.startsWith("/index-strategy ") -> {
+                indexStrategy = input.removePrefix("/index-strategy ").trim()
+                println("${Colors.LIGHT_GREEN}Strategy set: $indexStrategy${Colors.RESET}")
+            }
+            input == "/index-run" -> runIndexing(indexPath, indexStrategy)
             // MCP commands — available in any mode
             input == "/mcp" || input.startsWith("/mcp ") -> AssistRepl.handle(input.removePrefix("/"))
             input.startsWith("/") -> println("${Colors.LIGHT_YELLOW}Unknown command: $input${Colors.RESET}")
@@ -194,6 +209,7 @@ private fun runRepl(
                 when (session.currentMode) {
                     AgentMode.ARCHITECT -> architectOrchestrator.process(input)
                     AgentMode.ASSIST    -> ToolCallingAgent.handle(input, gateway, session.currentModel)
+                    AgentMode.INDEX     -> println("${Colors.DARK_GRAY}Use /index-run to start. See /index-status for current settings.${Colors.RESET}")
                     else                -> client.sendMessage(input)
                 }
             }
@@ -219,11 +235,17 @@ Commands:
   /context                        Show files loaded in context
   /context clear                  Remove all files from context
   /mode                           Show current mode
-  /mode <name>                    Switch mode (chat, code-analyzer, architect, assist)
+  /mode <name>                    Switch mode (chat, code-analyzer, architect, assist, index)
   /memory                         Show arch_settings.md and arch_tasks.json
   /profile                        Show user_profile.md
   /totalTokens                    Show token usage per request + total sum
   /analyze <path> [prompt]        Collect all text files from path and send for analysis
+
+Index mode commands (/mode index):
+  /index-path <path>              Set directory to index
+  /index-strategy fixed|structured  Set chunking strategy (default: fixed)
+  /index-status                   Show current settings and output path
+  /index-run                      Run indexing (saves to <path>/.indexed/<strategy>.json)
 
 Project commands:
   /features                       List all projects
@@ -376,6 +398,22 @@ private fun analyzeCode(session: ChatSession, client: ChatClient, rawPath: Strin
     }
 
     client.sendMessage(sb.toString().trimEnd())
+}
+
+private fun showIndexStatus(path: String?, strategy: String) {
+    val outputHint = if (path != null) "$path/.indexed/$strategy.json" else "(set path first)"
+    println("${Colors.LIGHT_YELLOW}Index settings:${Colors.RESET}")
+    println("${Colors.DARK_GRAY}  path     : ${path ?: "(not set)"}${Colors.RESET}")
+    println("${Colors.DARK_GRAY}  strategy : $strategy${Colors.RESET}")
+    println("${Colors.DARK_GRAY}  output   : $outputHint${Colors.RESET}")
+}
+
+private fun runIndexing(path: String?, strategy: String) {
+    if (path == null) {
+        println("${Colors.LIGHT_YELLOW}Set path first: /index-path <dir>${Colors.RESET}")
+        return
+    }
+    IndexCommandHandler().handle(arrayOf("--path", path, "--strategy", strategy))
 }
 
 private fun showMode(session: ChatSession) {

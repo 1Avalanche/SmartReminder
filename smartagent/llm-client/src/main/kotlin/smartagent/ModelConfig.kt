@@ -26,6 +26,10 @@ enum class AgentMode(val displayName: String, val basePrompt: String) {
     ASSIST(
         displayName = "assist",
         basePrompt = ""   // assist mode talks to MCP servers, not the LLM
+    ),
+    INDEX(
+        displayName = "index",
+        basePrompt = ""   // index mode runs RAG pipeline, not the LLM
     );
 
     companion object {
