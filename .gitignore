@@ -17,11 +17,11 @@ captures
 !*.xcworkspace/contents.xcworkspacedata
 **/xcshareddata/WorkspaceSettings.xcsettings
 node_modules/
-smartagent/network.log
-smartagent/tokens.md
-smartagent/context.json
+smartagent/cli/network.log
+smartagent/cli/tokens.json
+smartagent/cli/context.json
+smartagent/cli/user_profile.md
 smartagent/arch_settings.md
 smartagent/arch_tasks.json
-smartagent/user_profile.md
 smartagent/architect/*
 /smartagent/architect/
