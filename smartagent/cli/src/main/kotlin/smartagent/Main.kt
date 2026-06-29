@@ -349,14 +349,13 @@ private fun parseAnalyzeArgs(args: String): Pair<String, String?> {
 }
 
 private fun analyzeCode(session: ChatSession, client: ChatClient, rawPath: String, userPrompt: String?) {
-    val target = resolveAnalyzePath(rawPath, session)
+    val target = FileScanner.resolvePath(rawPath, session.repoContext?.root)
     if (target == null) {
         println("${Colors.LIGHT_YELLOW}Path not found: $rawPath${Colors.RESET}")
         return
     }
 
-    val collected = mutableListOf<Pair<String, String>>()
-    collectTextFiles(target, target, collected)
+    val collected = FileScanner(target).collectWithContent()
 
     if (collected.isEmpty()) {
         println("${Colors.LIGHT_YELLOW}No text files found in: ${target.absolutePath}${Colors.RESET}")
@@ -377,51 +376,6 @@ private fun analyzeCode(session: ChatSession, client: ChatClient, rawPath: Strin
     }
 
     client.sendMessage(sb.toString().trimEnd())
-}
-
-private fun resolveAnalyzePath(rawPath: String, session: ChatSession): File? {
-    val abs = File(rawPath)
-    if (abs.isAbsolute && abs.exists()) return abs
-
-    val repoRoot = session.repoContext?.root
-    if (repoRoot != null) {
-        val relative = File(repoRoot, rawPath)
-        if (relative.exists()) return relative
-    }
-
-    val cwd = File(rawPath).canonicalFile
-    if (cwd.exists()) return cwd
-
-    return null
-}
-
-private fun collectTextFiles(target: File, base: File, result: MutableList<Pair<String, String>>) {
-    val ignoredDirs = setOf(
-        ".git", "build", ".gradle", "node_modules", ".idea",
-        "__pycache__", "out", ".dart_tool", ".pub-cache", ".build",
-        "DerivedData", ".swiftpm", "Pods"
-    )
-    val binaryExtensions = setOf(
-        "png", "jpg", "jpeg", "gif", "ico", "bmp", "webp",
-        "pdf", "zip", "jar", "class", "apk", "ipa", "so", "dylib",
-        "exe", "bin", "o", "a", "lib"
-    )
-    if (target.isFile) {
-        if (target.extension !in binaryExtensions) {
-            val content = runCatching { target.readText() }.getOrNull() ?: return
-            result.add(Pair(target.relativeTo(base.parentFile ?: base).path, content))
-        }
-        return
-    }
-
-    target.walkTopDown()
-        .onEnter { it.name !in ignoredDirs }
-        .filter { it.isFile && it.extension !in binaryExtensions }
-        .sortedBy { it.relativeTo(base).path }
-        .forEach { file ->
-            val content = runCatching { file.readText() }.getOrNull() ?: return@forEach
-            result.add(Pair(file.relativeTo(base).path, content))
-        }
 }
 
 private fun showMode(session: ChatSession) {
