@@ -82,4 +82,40 @@ class FixedChunkerTest {
         val chunks = FixedChunker(5).chunk(listOf(doc("hello world")))
         assertTrue(chunks.all { it.metadata.sectionPath.isEmpty() })
     }
+
+    @Test
+    fun `overlap produces sliding window chunks`() {
+        val chunks = FixedChunker(chunkSize = 5, overlapSize = 2).chunk(listOf(doc("abcdefghij")))
+        assertEquals(3, chunks.size)
+        assertEquals("abcde", chunks[0].content)
+        assertEquals("defgh", chunks[1].content)
+        assertEquals("ghij", chunks[2].content)
+    }
+
+    @Test
+    fun `overlap continues past first chunk`() {
+        val chunks = FixedChunker(chunkSize = 5, overlapSize = 2).chunk(listOf(doc("abcdefghijkl")))
+        assertEquals(4, chunks.size)
+        assertEquals("abcde", chunks[0].content)
+        assertEquals("defgh", chunks[1].content)
+        assertEquals("ghijk", chunks[2].content)
+        assertEquals("jkl", chunks[3].content)
+    }
+
+    @Test
+    fun `default overlap is 10 percent of chunkSize`() {
+        val chunks = FixedChunker(10).chunk(listOf(doc("abcdefghijklmnopqrst")))
+        assertEquals(3, chunks.size)
+        assertEquals("abcdefghij", chunks[0].content)
+        assertEquals("jklmnopqrs", chunks[1].content)
+        assertEquals("st", chunks[2].content)
+    }
+
+    @Test
+    fun `zero overlap behaves like chunked`() {
+        val chunks = FixedChunker(chunkSize = 4, overlapSize = 0).chunk(listOf(doc("abcdefgh")))
+        assertEquals(2, chunks.size)
+        assertEquals("abcd", chunks[0].content)
+        assertEquals("efgh", chunks[1].content)
+    }
 }
