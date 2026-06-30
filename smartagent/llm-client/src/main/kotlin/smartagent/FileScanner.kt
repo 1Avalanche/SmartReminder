@@ -1,11 +1,15 @@
 package smartagent
 
 import java.io.File
+import java.nio.ByteBuffer
+import java.nio.charset.CodingErrorAction
 
 class FileScanner(
     val root: File,
     val ignoredDirs: Set<String> = DEFAULT_IGNORED_DIRS,
-    val binaryExtensions: Set<String> = DEFAULT_BINARY_EXTENSIONS
+    val binaryExtensions: Set<String> = DEFAULT_BINARY_EXTENSIONS,
+    val allowedTextExtensions: Set<String> = DEFAULT_ALLOWED_TEXT_EXTENSIONS,
+    val allowedTextFilenames: Set<String> = DEFAULT_ALLOWED_TEXT_FILENAMES
 ) {
     companion object {
         val DEFAULT_IGNORED_DIRS = setOf(
@@ -17,6 +21,24 @@ class FileScanner(
             "png", "jpg", "jpeg", "gif", "ico", "bmp", "webp",
             "pdf", "zip", "jar", "class", "apk", "ipa", "so", "dylib",
             "exe", "bin", "o", "a", "lib"
+        )
+        val DEFAULT_ALLOWED_TEXT_EXTENSIONS = setOf(
+            "kt", "kts", "java", "py", "js", "ts", "jsx", "tsx",
+            "go", "rs", "cpp", "c", "cs", "swift", "scala", "rb",
+            "sh", "bash", "zsh", "dart",
+            "h", "hpp", "php", "pl", "pm", "lua", "r",
+            "json", "xml", "yaml", "yml", "toml", "csv", "tsv",
+            "ini", "cfg", "conf", "properties", "env",
+            "md", "markdown", "txt", "html", "htm", "css", "scss", "sass", "less",
+            "rst", "adoc", "tex",
+            "gradle", "cmake",
+            "sql", "ps1", "bat", "cmd",
+            "log"
+        )
+        val DEFAULT_ALLOWED_TEXT_FILENAMES = setOf(
+            "makefile", "dockerfile", "vagrantfile",
+            "gradle.properties", "local.properties",
+            "proguard-rules.pro"
         )
 
         fun resolvePath(rawPath: String, repoRoot: File?): File? {
@@ -35,7 +57,7 @@ class FileScanner(
     fun listFiles(pattern: String? = null): List<String> =
         root.walkTopDown()
             .onEnter { it.name !in ignoredDirs }
-            .filter { it.isFile && it.extension !in binaryExtensions }
+            .filter { it.isFile && isAllowedTextFile(it) }
             .map { it.relativeTo(root).path }
             .filter { pattern == null || it.contains(pattern, ignoreCase = true) }
             .sorted()
@@ -43,7 +65,7 @@ class FileScanner(
 
     fun readFile(relativePath: String): String? {
         val file = File(root, relativePath)
-        return if (file.exists() && file.isFile) file.readText() else null
+        return if (file.exists() && file.isFile) safeReadTextFile(file) else null
     }
 
     fun fileTree(maxDepth: Int = 3): String {
@@ -69,18 +91,49 @@ class FileScanner(
 
     fun collectWithContent(): List<Pair<String, String>> {
         if (root.isFile) {
-            if (root.extension in binaryExtensions) return emptyList()
-            val content = runCatching { root.readText() }.getOrNull() ?: return emptyList()
+            val content = safeReadTextFile(root) ?: return emptyList()
             return listOf(Pair(root.name, content))
         }
         return root.walkTopDown()
             .onEnter { it.name !in ignoredDirs }
-            .filter { it.isFile && it.extension !in binaryExtensions }
+            .filter { it.isFile && isAllowedTextFile(it) }
             .sortedBy { it.relativeTo(root).path }
             .mapNotNull { file ->
-                val content = runCatching { file.readText() }.getOrNull() ?: return@mapNotNull null
+                val content = safeReadTextFile(file) ?: return@mapNotNull null
                 Pair(file.relativeTo(root).path, content)
             }
             .toList()
+    }
+
+    private fun isAllowedTextFile(file: File): Boolean {
+        val ext = file.extension.lowercase()
+        val name = file.name.lowercase()
+        return ext in allowedTextExtensions || name in allowedTextFilenames
+    }
+
+    private fun safeReadTextFile(file: File): String? {
+        val ext = file.extension.lowercase()
+        if (ext in binaryExtensions) {
+            println("[FileScanner] skipping blacklisted extension: ${file.path}")
+            return null
+        }
+
+        val bytes = runCatching { file.readBytes() }
+            .onFailure { e -> System.err.println("[FileScanner] error reading ${file.path}: ${e.message}") }
+            .getOrNull() ?: return null
+
+        if (bytes.contains(0.toByte())) {
+            println("[FileScanner] skipping binary file (null byte detected): ${file.path}")
+            return null
+        }
+
+        return runCatching {
+            Charsets.UTF_8.newDecoder()
+                .onMalformedInput(CodingErrorAction.REPLACE)
+                .onUnmappableCharacter(CodingErrorAction.REPLACE)
+                .decode(ByteBuffer.wrap(bytes))
+                .toString()
+        }.onFailure { e -> System.err.println("[FileScanner] error decoding ${file.path}: ${e.message}") }
+            .getOrNull()
     }
 }

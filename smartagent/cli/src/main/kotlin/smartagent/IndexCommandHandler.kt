@@ -41,7 +41,19 @@ class IndexCommandHandler {
         println(" ${chunks.size} chunks")
 
         print("Embedding and indexing...")
-        chunks.forEach { chunk -> store.add(generator.embed(chunk.content), chunk) }
+        var errors = 0
+        chunks.forEach { chunk ->
+            try {
+                store.add(generator.embed(chunk.content), chunk)
+            } catch (e: Exception) {
+                errors++
+                println()
+                println("${Colors.LIGHT_YELLOW}  skip chunk ${chunk.id} (${chunk.content.length} chars): ${e.message}${Colors.RESET}")
+            }
+        }
+        if (errors > 0) {
+            println("${Colors.LIGHT_YELLOW}  ($errors chunks skipped due to errors)${Colors.RESET}")
+        }
         println(" done")
 
         print("Saving...")

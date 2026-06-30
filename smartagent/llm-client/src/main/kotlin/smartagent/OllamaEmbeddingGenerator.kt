@@ -12,7 +12,8 @@ import java.io.IOException
 class OllamaEmbeddingGenerator(
     private val baseUrl: String = "http://localhost:11434",
     private val model: String = "nomic-embed-text",
-    private val client: OkHttpClient = OkHttpClient()
+    private val client: OkHttpClient = OkHttpClient(),
+    private val normalizer: TextNormalizer = DefaultTextNormalizer()
 ) : EmbeddingGenerator {
 
     override val dimension: Int = 768
@@ -26,7 +27,8 @@ class OllamaEmbeddingGenerator(
     private data class EmbedResponse(val embedding: List<Float>)
 
     override fun embed(text: String): FloatArray {
-        val body = json.encodeToString(EmbedRequest(model = model, prompt = text))
+        val cleanText = normalizer.normalize(text)
+        val body = json.encodeToString(EmbedRequest(model = model, prompt = cleanText))
             .toRequestBody("application/json".toMediaType())
 
         val request = Request.Builder()
@@ -41,10 +43,11 @@ class OllamaEmbeddingGenerator(
         }
 
         response.use {
+            val bodyStr = it.body?.string()
             if (!it.isSuccessful) {
-                throw IllegalStateException("Ollama returned HTTP ${it.code}: ${it.message}")
+                throw IllegalStateException("Ollama returned HTTP ${it.code}: ${it.message}\nBody: ${bodyStr ?: "N/A"}")
             }
-            val responseBody = it.body?.string()?.takeIf { s -> s.isNotBlank() }
+            val responseBody = bodyStr?.takeIf { s -> s.isNotBlank() }
                 ?: throw IllegalStateException("Ollama returned empty response")
             return json.decodeFromString<EmbedResponse>(responseBody).embedding.toFloatArray()
         }

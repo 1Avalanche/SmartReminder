@@ -122,6 +122,8 @@ class StructuredChunkerTest {
 
     // --- code mode ---
 
+    private val codeChunker = StructuredChunker(minChunkSize = 1, overlapSize = 0)
+
     private fun codeDoc(content: String, ext: String = "kt") = Document(
         id = "Main.$ext",
         title = "Main.$ext",
@@ -140,7 +142,7 @@ class StructuredChunkerTest {
                 val x = 1
             }
         """.trimIndent()
-        val chunks = chunker.chunk(listOf(codeDoc(content)))
+        val chunks = codeChunker.chunk(listOf(codeDoc(content)))
         assertEquals(2, chunks.size)
         assertTrue("class Foo" in chunks[0].content)
         assertTrue("fun topLevel" in chunks[1].content)
@@ -156,7 +158,7 @@ class StructuredChunkerTest {
                 fun baz() {}
             }
         """.trimIndent()
-        val chunks = chunker.chunk(listOf(codeDoc(content)))
+        val chunks = codeChunker.chunk(listOf(codeDoc(content)))
         assertEquals(3, chunks.size)
         assertTrue("class Foo" in chunks[0].content)
         assertTrue("fun bar" in chunks[1].content)
@@ -171,7 +173,7 @@ class StructuredChunkerTest {
                 fun baz() {}
             }
         """.trimIndent()
-        val chunks = chunker.chunk(listOf(codeDoc(content)))
+        val chunks = codeChunker.chunk(listOf(codeDoc(content)))
         assertEquals(1, chunks.size)
         assertTrue("fun bar" in chunks[0].content)
         assertTrue("fun baz" in chunks[0].content)

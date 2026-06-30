@@ -7,7 +7,9 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import java.util.concurrent.TimeUnit
 
-class OkHttpLLMGateway : LLMGateway {
+class OkHttpLLMGateway(
+    private val normalizer: TextNormalizer = DefaultTextNormalizer()
+) : LLMGateway {
     private val http = OkHttpClient.Builder()
         .connectTimeout(60, TimeUnit.SECONDS)
         .readTimeout(120, TimeUnit.SECONDS)
@@ -16,7 +18,10 @@ class OkHttpLLMGateway : LLMGateway {
 
     override fun chat(messages: List<Message>, model: ModelConfig, source: String): LLMGateway.Response? {
         val apiKey = Config.apiKey(model) ?: return null
-        val requestBody = json.encodeToString(ChatRequest(model.apiModelId, messages))
+        val cleanMessages = messages.map { msg ->
+            msg.copy(content = normalizer.normalize(msg.content))
+        }
+        val requestBody = json.encodeToString(ChatRequest(model.apiModelId, cleanMessages))
         val request = Request.Builder()
             .url(model.url)
             .addHeader("Authorization", "Bearer $apiKey")

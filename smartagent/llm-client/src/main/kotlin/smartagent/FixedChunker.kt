@@ -1,6 +1,9 @@
 package smartagent
 
-class FixedChunker(private val chunkSize: Int) : Chunker {
+class FixedChunker(
+    private val chunkSize: Int,
+    private val normalizer: TextNormalizer = DefaultTextNormalizer()
+) : Chunker {
 
     override fun chunk(documents: List<Document>): List<Chunk> =
         documents.flatMap { document ->
@@ -9,7 +12,7 @@ class FixedChunker(private val chunkSize: Int) : Chunker {
                 .mapIndexed { index, text ->
                     Chunk(
                         id = "${document.id}_$index",
-                        content = text,
+                        content = normalizer.normalize(text),
                         documentId = document.id,
                         index = index,
                         metadata = ChunkMetadata(
