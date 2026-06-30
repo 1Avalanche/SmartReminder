@@ -21,18 +21,21 @@ class OllamaEmbeddingGenerator(
     private val json = Json { ignoreUnknownKeys = true }
 
     @Serializable
-    private data class EmbedRequest(val model: String, val prompt: String)
+    private data class EmbedRequest(val model: String, val input: String)
 
     @Serializable
-    private data class EmbedResponse(val embedding: List<Float>)
+    private data class EmbedResponse(
+        val embeddings: List<List<Float>>,
+        val prompt_eval_count: Int = 0
+    )
 
-    override fun embed(text: String): FloatArray {
+    override fun embed(text: String): EmbeddingResult {
         val cleanText = normalizer.normalize(text)
-        val body = json.encodeToString(EmbedRequest(model = model, prompt = cleanText))
+        val body = json.encodeToString(EmbedRequest(model = model, input = cleanText))
             .toRequestBody("application/json".toMediaType())
 
         val request = Request.Builder()
-            .url("$baseUrl/api/embeddings")
+            .url("$baseUrl/api/embed")
             .post(body)
             .build()
 
@@ -49,7 +52,10 @@ class OllamaEmbeddingGenerator(
             }
             val responseBody = bodyStr?.takeIf { s -> s.isNotBlank() }
                 ?: throw IllegalStateException("Ollama returned empty response")
-            return json.decodeFromString<EmbedResponse>(responseBody).embedding.toFloatArray()
+            val parsed = json.decodeFromString<EmbedResponse>(responseBody)
+            val vector = parsed.embeddings.firstOrNull()?.toFloatArray()
+                ?: throw IllegalStateException("Ollama returned empty embeddings")
+            return EmbeddingResult(vector = vector, promptTokens = parsed.prompt_eval_count)
         }
     }
 }

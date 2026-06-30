@@ -42,15 +42,20 @@ class IndexCommandHandler {
 
         print("Embedding and indexing...")
         var errors = 0
+        var totalTokens = 0
+        val startTime = System.nanoTime()
         chunks.forEach { chunk ->
             try {
-                store.add(generator.embed(chunk.content), chunk)
+                val result = generator.embed(chunk.content)
+                store.add(result.vector, chunk)
+                totalTokens += result.promptTokens
             } catch (e: Exception) {
                 errors++
                 println()
                 println("${Colors.LIGHT_YELLOW}  skip chunk ${chunk.id} (${chunk.content.length} chars): ${e.message}${Colors.RESET}")
             }
         }
+        val elapsedMs = (System.nanoTime() - startTime) / 1_000_000
         if (errors > 0) {
             println("${Colors.LIGHT_YELLOW}  ($errors chunks skipped due to errors)${Colors.RESET}")
         }
@@ -63,7 +68,9 @@ class IndexCommandHandler {
         println("${Colors.LIGHT_GREEN}Index saved: ${outputFile.absolutePath}${Colors.RESET}")
         println("${Colors.DARK_GRAY}Documents : ${documents.size}")
         println("Chunks    : ${chunks.size}")
-        println("Index size: ${store.size()} entries${Colors.RESET}")
+        println("Index size: ${store.size()} entries")
+        println("Time      : ${"%.1f".format(elapsedMs / 1000.0)}s")
+        println("Tokens    : ${totalTokens}${Colors.RESET}")
     }
 
     private data class IndexParams(val path: String, val strategy: String)

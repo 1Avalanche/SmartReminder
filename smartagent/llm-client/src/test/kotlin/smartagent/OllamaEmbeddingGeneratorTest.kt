@@ -31,37 +31,49 @@ class OllamaEmbeddingGeneratorTest {
     }
 
     @Test
-    fun `embed returns FloatArray from response`() {
+    fun `embed returns EmbeddingResult with vector and tokens`() {
         server.enqueue(MockResponse()
-            .setBody("""{"embedding":[0.1,0.2,0.3]}""")
+            .setBody("""{"embeddings":[[0.1,0.2,0.3]],"prompt_eval_count":42}""")
             .setResponseCode(200))
 
         val result = generator.embed("hello")
 
-        assertContentEquals(floatArrayOf(0.1f, 0.2f, 0.3f), result)
+        assertContentEquals(floatArrayOf(0.1f, 0.2f, 0.3f), result.vector)
+        assertEquals(42, result.promptTokens)
+    }
+
+    @Test
+    fun `embed defaults tokens to 0 when not in response`() {
+        server.enqueue(MockResponse()
+            .setBody("""{"embeddings":[[0.0]]}""")
+            .setResponseCode(200))
+
+        val result = generator.embed("test")
+
+        assertEquals(0, result.promptTokens)
     }
 
     @Test
     fun `embed sends POST to correct endpoint`() {
-        server.enqueue(MockResponse().setBody("""{"embedding":[0.0]}""").setResponseCode(200))
+        server.enqueue(MockResponse().setBody("""{"embeddings":[[0.0]]}""").setResponseCode(200))
 
         generator.embed("test")
 
         val request = server.takeRequest()
         assertEquals("POST", request.method)
-        assertEquals("/api/embeddings", request.path)
+        assertEquals("/api/embed", request.path)
     }
 
     @Test
-    fun `embed sends correct model and prompt in request body`() {
-        server.enqueue(MockResponse().setBody("""{"embedding":[0.0]}""").setResponseCode(200))
+    fun `embed sends correct model and input in request body`() {
+        server.enqueue(MockResponse().setBody("""{"embeddings":[[0.0]]}""").setResponseCode(200))
 
         generator.embed("my text")
 
         val request = server.takeRequest()
         val body = Json.parseToJsonElement(request.body.readUtf8()).jsonObject
         assertEquals("nomic-embed-text", body["model"]?.jsonPrimitive?.content)
-        assertEquals("my text", body["prompt"]?.jsonPrimitive?.content)
+        assertEquals("my text", body["input"]?.jsonPrimitive?.content)
     }
 
     @Test
@@ -88,6 +100,15 @@ class OllamaEmbeddingGeneratorTest {
     }
 
     @Test
+    fun `embed throws on empty embeddings array`() {
+        server.enqueue(MockResponse()
+            .setBody("""{"embeddings":[]}""")
+            .setResponseCode(200))
+
+        assertFailsWith<IllegalStateException> { generator.embed("text") }
+    }
+
+    @Test
     fun `dimension is 768`() {
         assertEquals(768, generator.dimension)
     }
@@ -96,7 +117,7 @@ class OllamaEmbeddingGeneratorTest {
     fun `embedBatch calls embed for each text`() {
         repeat(3) {
             server.enqueue(MockResponse()
-                .setBody("""{"embedding":[${it}.0]}""")
+                .setBody("""{"embeddings":[[${it}.0]]}""")
                 .setResponseCode(200))
         }
 
