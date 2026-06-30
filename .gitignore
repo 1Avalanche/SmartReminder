@@ -27,4 +27,5 @@ smartagent/architect/*
 /smartagent/architect/
 smartagent/user_profile.md
 smartagent/.indexed
+smartagent/temp/*
 /AGENTS.md

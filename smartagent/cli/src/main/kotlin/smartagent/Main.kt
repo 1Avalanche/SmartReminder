@@ -33,7 +33,7 @@ fun main(args: Array<String>) {
         }
     }
 
-    val targetMode = parsedArgs.initialMode ?: AgentMode.INDEX
+    val targetMode = parsedArgs.initialMode ?: AgentMode.QUESTION
     if (session.currentMode != targetMode) session.switchMode(targetMode)
 
     val client = ChatClient(session)
@@ -59,6 +59,10 @@ fun main(args: Array<String>) {
         AgentMode.ASSIST -> {
             println("${Colors.LIGHT_YELLOW}SmartAgent — Assist mode${Colors.RESET}")
             println("${Colors.DARK_GRAY}Type '/mcp list' to see servers, /help for all commands, /exit to quit.${Colors.RESET}\n")
+        }
+        AgentMode.QUESTION -> {
+            println("${Colors.LIGHT_YELLOW}SmartAgent — Question mode${Colors.RESET}")
+            println("${Colors.DARK_GRAY}Type /question-rag on|off to toggle RAG, then type your question.${Colors.RESET}\n")
         }
         else -> {
             println("${Colors.LIGHT_YELLOW}SmartAgent готов к работе!${Colors.RESET}")
@@ -105,6 +109,8 @@ private fun runRepl(
 ) {
     var indexPath: String? = null
     var indexStrategy = "fixed"
+    var questionRag = true
+    val questionHandler = QuestionHandler(session, client)
 
     while (true) {
         print("${Colors.BRIGHT_WHITE}> ")
@@ -161,6 +167,7 @@ private fun runRepl(
                     AgentMode.ARCHITECT -> architectOnboarding.startSession(featureRepository.getActiveFeature() != null)
                     AgentMode.ASSIST -> println("${Colors.DARK_GRAY}Assist mode. Type '/mcp list' to start.${Colors.RESET}")
                     AgentMode.INDEX -> println("${Colors.DARK_GRAY}Index mode. Set /index-path, /index-strategy, /index-output, then /index-run.${Colors.RESET}")
+                    AgentMode.QUESTION -> println("${Colors.DARK_GRAY}Question mode. Use /question-rag on|off, then type your question.${Colors.RESET}")
                     else -> {}
                 }
             }
@@ -208,6 +215,21 @@ private fun runRepl(
                 }
             }
             input == "/index-run" -> runIndexing(indexPath, indexStrategy)
+            // Question mode commands
+            input == "/question-rag" -> println("Question RAG: ${if (questionRag) "on" else "off"}")
+            input.startsWith("/question-rag ") -> {
+                val value = input.removePrefix("/question-rag ").trim()
+                val newRag = when (value) {
+                    "on" -> true
+                    "off" -> false
+                    else -> { println("Use: /question-rag on|off"); null }
+                }
+                if (newRag != null && newRag != questionRag) {
+                    questionRag = newRag
+                    session.clear()
+                    println("${Colors.LIGHT_GREEN}Question RAG: ${if (questionRag) "on" else "off"} (history cleared)${Colors.RESET}")
+                }
+            }
             // MCP commands — available in any mode
             input == "/mcp" || input.startsWith("/mcp ") -> AssistRepl.handle(input.removePrefix("/"))
             input.startsWith("/") -> println("${Colors.LIGHT_YELLOW}Unknown command: $input${Colors.RESET}")
@@ -216,6 +238,7 @@ private fun runRepl(
                     AgentMode.ARCHITECT -> architectOrchestrator.process(input)
                     AgentMode.ASSIST    -> ToolCallingAgent.handle(input, gateway, session.currentModel)
                     AgentMode.INDEX     -> println("${Colors.DARK_GRAY}Use /index-run to start. See /index-status for current settings.${Colors.RESET}")
+                    AgentMode.QUESTION  -> questionHandler.handle(input, questionRag)
                     else                -> client.sendMessage(input)
                 }
             }
@@ -241,7 +264,7 @@ Commands:
   /context                        Show files loaded in context
   /context clear                  Remove all files from context
   /mode                           Show current mode
-  /mode <name>                    Switch mode (chat, code-analyzer, architect, assist, index)
+  /mode <name>                    Switch mode (chat, code-analyzer, architect, assist, index, question)
   /memory                         Show arch_settings.md and arch_tasks.json
   /profile                        Show user_profile.md
   /totalTokens                    Show token usage per request + total sum
@@ -252,6 +275,9 @@ Index mode commands (/mode index):
   /index-strategy fixed|structured  Set chunking strategy (default: fixed)
   /index-status                   Show current settings and output path
   /index-run                      Run indexing (saves to <path>/.indexed/<strategy>.json)
+
+Question mode commands (/mode question):
+  /question-rag on|off            Toggle RAG retrieval (default: on)
 
 Project commands:
   /features                       List all projects

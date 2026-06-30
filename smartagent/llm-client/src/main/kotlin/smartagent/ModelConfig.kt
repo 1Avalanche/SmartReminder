@@ -30,6 +30,10 @@ enum class AgentMode(val displayName: String, val basePrompt: String) {
     INDEX(
         displayName = "index",
         basePrompt = ""   // index mode runs RAG pipeline, not the LLM
+    ),
+    QUESTION(
+        displayName = "question",
+        basePrompt = ""   // loaded from file in CLI, basePrompt built dynamically
     );
 
     companion object {

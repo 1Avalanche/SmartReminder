@@ -15,7 +15,7 @@ internal class ChatClient(private val session: ChatSession) {
         .writeTimeout(60, TimeUnit.SECONDS)
         .build()
 
-    fun sendMessage(text: String) {
+    fun sendMessage(text: String, systemPromptOverride: String? = null, includeHistory: Boolean = true) {
         val apiKey = Config.apiKey(session.currentModel)
         if (apiKey.isNullOrBlank()) {
             println("Error: ${session.currentModel.apiKeyProperty} not found in local.properties or environment")
@@ -29,17 +29,19 @@ internal class ChatClient(private val session: ChatSession) {
         val watcherThread = escCanceller.start()
         try {
             val fileContextContent = session.buildFileContextMessages().firstOrNull()?.content ?: ""
-            val estimatedChars = session.currentSystemPrompt.length +
-                session.buildContextContent().length + fileContextContent.length + text.length
+            val effectiveSystemPrompt = systemPromptOverride ?: session.currentSystemPrompt
+            val historyContent = if (includeHistory) session.buildContextContent() else ""
+            val estimatedChars = effectiveSystemPrompt.length +
+                historyContent.length + fileContextContent.length + text.length
             SummaryAgent(session).compressIfNeeded(estimatedChars)
 
             val userContent = if (fileContextContent.isNotEmpty()) "$fileContextContent\n\n$text" else text
             var retried = false
 
             while (true) {
-                val contextContent = session.buildContextContent()
+                val contextContent = if (includeHistory) session.buildContextContent() else ""
                 val fullMessages = buildList {
-                    add(Message("system", session.currentSystemPrompt))
+                    add(Message("system", effectiveSystemPrompt))
                     if (contextContent.isNotEmpty()) add(Message("assistant", contextContent))
                     add(timestampMessage())
                     add(Message("user", userContent))
