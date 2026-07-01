@@ -77,6 +77,15 @@ enum class ModelConfig(
         url = "https://openrouter.ai/api/v1/chat/completions",
         contextWindow = 131_000,
         aliases = listOf("qwen3-8b")
+    ),
+    RERANK(
+        shortName = "rerank",
+        description = "Cohere Rerank 4 Fast (OpenRouter)",
+        apiModelId = "cohere/rerank-4-fast",
+        apiKeyProperty = "OPENROUTER_STUDY_API_KEY",
+        url = "https://openrouter.ai/api/v1",
+        contextWindow = 0,
+        aliases = listOf("reranker")
     );
 
     companion object {

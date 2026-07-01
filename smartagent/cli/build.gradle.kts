@@ -10,6 +10,7 @@ dependencies {
     implementation(libs.okhttp)
     implementation(libs.kotlinx.serialization.json)
     testImplementation(libs.kotlin.testJunit)
+    testImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
     testImplementation(testFixtures(project(":llm-client")))
 }
 

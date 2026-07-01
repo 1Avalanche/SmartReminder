@@ -12,11 +12,17 @@ class InMemoryVectorStore : VectorStore {
         entries.add(Entry(embedding, chunk))
     }
 
-    override fun search(queryEmbedding: FloatArray, topK: Int): List<SearchResult> =
-        entries
+    override fun search(queryEmbedding: FloatArray, topK: Int, threshold: Double): List<SearchResult> {
+        val candidates = entries
             .map { SearchResult(it.chunk, cosineSimilarity(queryEmbedding, it.embedding)) }
             .sortedByDescending { it.score }
             .take(topK)
+        return if (threshold > 0.0) {
+            candidates.filter { it.score >= threshold.toFloat() }
+        } else {
+            candidates
+        }
+    }
 
     override fun size(): Int = entries.size
 
