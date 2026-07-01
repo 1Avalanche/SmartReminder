@@ -6,28 +6,41 @@ internal class QuestionHandler(private val session: ChatSession, private val cli
 
     private var vectorStore: VectorStore? = null
 
-    fun handle(input: String, ragEnabled: Boolean) {
+    fun handle(input: String, ragMode: RagMode) {
         print("${Colors.DARK_GRAY}Processing question...${Colors.RESET}")
 
         val baseSystemPrompt = loadSystemPrompt()
-        var usedRag = ragEnabled
         var contextBlock: String? = null
 
-        if (ragEnabled) {
+        if (ragMode != RagMode.NO) {
             try {
                 val store = getVectorStore()
                 if (store != null) {
-                    val generator = OllamaEmbeddingGenerator()
-                    val embedding = generator.embed(input)
-                    val results = store.search(embedding.vector, 20)
-                    if (results.isNotEmpty()) {
-                        contextBlock = formatContextBlock(results)
+                    when (ragMode) {
+                        RagMode.SIMPLE -> {
+                            val generator = OllamaEmbeddingGenerator()
+                            val embedding = generator.embed(input)
+                            val results = store.search(embedding.vector, 3)
+                            if (results.isNotEmpty()) {
+                                contextBlock = formatContextBlock(results)
+                            }
+                        }
+                        RagMode.RERANK -> {
+                            val generator = OllamaEmbeddingGenerator()
+                            val embedding = generator.embed(input)
+                            val results = store.search(embedding.vector, 20)
+                            val filtered = results.filter { it.score >= 0.3f }
+                            val top = if (filtered.isEmpty()) results.take(3) else filtered.take(3)
+                            if (top.isNotEmpty()) {
+                                contextBlock = formatContextBlock(top)
+                            }
+                        }
+                        RagMode.NO -> {}
                     }
                 }
             } catch (e: Exception) {
                 println()
                 println("${Colors.LIGHT_YELLOW}RAG unavailable: ${e.message}. Falling back to base prompt.${Colors.RESET}")
-                usedRag = false
             }
         }
 
@@ -35,7 +48,7 @@ internal class QuestionHandler(private val session: ChatSession, private val cli
             println(" ${Colors.DARK_GRAY}(RAG: ${resultsCount(contextBlock)} chunks)${Colors.RESET}")
             "$baseSystemPrompt\n\nКонтекст:\n$contextBlock"
         } else {
-            if (usedRag) println(" ${Colors.DARK_GRAY}(no relevant chunks found)${Colors.RESET}")
+            if (ragMode != RagMode.NO) println(" ${Colors.DARK_GRAY}(no relevant chunks found)${Colors.RESET}")
             else println()
             baseSystemPrompt
         }
@@ -95,7 +108,9 @@ internal class QuestionHandler(private val session: ChatSession, private val cli
             1. Если контекст содержит ответ — используй его.
             2. Если контекст НЕ содержит ответа — ответь, используя свои знания.
             3. Ты ОБЯЗАН дать ответ. Никогда не отказывайся отвечать.
-            4. Начинай ответ с одной из строк:
+            
+            Формат ответа:
+            Обязательно начинай ответ с одной из строк:
                - "Источник: контекст" — если ответ на основе контекста
                - "Источник: знания" — если ответ на основе твоих знаний
                - "Источник: контекст и знания" — если комбинируешь
