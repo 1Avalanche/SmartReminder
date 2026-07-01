@@ -110,7 +110,11 @@ private fun runRepl(
     var indexPath: String? = null
     var indexStrategy = "fixed"
     var ragMode = RagMode.SIMPLE
-    val questionHandler = QuestionHandler(session, client)
+    val rerankerClient = run {
+            val key = Config.apiKey(ModelConfig.RERANK)
+            if (key != null) RerankerClient(key) else null
+        }
+    val questionHandler = QuestionHandler(session, client, rerankerClient)
 
     while (true) {
         print("${Colors.BRIGHT_WHITE}> ")

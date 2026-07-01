@@ -80,8 +80,8 @@ enum class ModelConfig(
     ),
     RERANK(
         shortName = "rerank",
-        description = "Cohere Rerank 4 Fast (OpenRouter)",
-        apiModelId = "cohere/rerank-4-fast",
+        description = "Nvidia Llama Nemotron Rerank (OpenRouter, free)",
+        apiModelId = "nvidia/llama-nemotron-rerank-vl-1b-v2:free",
         apiKeyProperty = "OPENROUTER_STUDY_API_KEY",
         url = "https://openrouter.ai/api/v1",
         contextWindow = 0,

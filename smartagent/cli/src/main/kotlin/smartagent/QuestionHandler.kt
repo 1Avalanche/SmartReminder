@@ -2,65 +2,111 @@ package smartagent
 
 import java.io.File
 
-internal class QuestionHandler(private val session: ChatSession, private val client: ChatClient) {
-
+internal class QuestionHandler(
+    private val session: ChatSession,
+    private val client: ChatClient,
+    private val rerankerClient: RerankerClient? = null
+) {
     private var vectorStore: VectorStore? = null
 
     fun handle(input: String, ragMode: RagMode) {
         print("${Colors.DARK_GRAY}Processing question...${Colors.RESET}")
 
         val baseSystemPrompt = loadSystemPrompt()
-        var contextBlock: String? = null
 
-        if (ragMode != RagMode.NO) {
-            try {
+        val chunks = when (ragMode) {
+            RagMode.NO -> {
+                println()
+                emptyList()
+            }
+            RagMode.SIMPLE -> {
                 val store = getVectorStore()
-                if (store != null) {
-                    when (ragMode) {
-                        RagMode.SIMPLE -> {
-                            val generator = OllamaEmbeddingGenerator()
-                            val embedding = generator.embed(input)
-                            val results = store.search(embedding.vector, 3)
-                            if (results.isNotEmpty()) {
-                                contextBlock = formatContextBlock(results)
-                            }
-                        }
-                        RagMode.RERANK -> {
-                            val generator = OllamaEmbeddingGenerator()
-                            val embedding = generator.embed(input)
-                            val results = store.search(embedding.vector, 20)
-                            val filtered = results.filter { it.score >= 0.3f }
-                            val top = if (filtered.isEmpty()) results.take(3) else filtered.take(3)
-                            if (top.isNotEmpty()) {
-                                contextBlock = formatContextBlock(top)
-                            }
-                        }
-                        RagMode.NO -> {}
+                if (store == null) {
+                    println(" ${Colors.LIGHT_YELLOW}(index not loaded)${Colors.RESET}")
+                    emptyList()
+                } else {
+                    retrieveChunks(input, useRerank = false)
+                }
+            }
+            RagMode.RERANK -> {
+                if (rerankerClient == null) {
+                    println(" ${Colors.LIGHT_YELLOW}(reranker not configured, falling back to simple)${Colors.RESET}")
+                    val store = getVectorStore()
+                    if (store == null) {
+                        println(" ${Colors.LIGHT_YELLOW}(index not loaded)${Colors.RESET}")
+                        emptyList()
+                    } else {
+                        retrieveChunks(input, useRerank = false)
+                    }
+                } else {
+                    val store = getVectorStore()
+                    if (store == null) {
+                        println(" ${Colors.LIGHT_YELLOW}(index not loaded)${Colors.RESET}")
+                        emptyList()
+                    } else {
+                        retrieveChunks(input, useRerank = true)
                     }
                 }
-            } catch (e: Exception) {
-                println()
-                println("${Colors.LIGHT_YELLOW}RAG unavailable: ${e.message}. Falling back to base prompt.${Colors.RESET}")
             }
         }
 
-        val fullPrompt = if (contextBlock != null) {
-            println(" ${Colors.DARK_GRAY}(RAG: ${resultsCount(contextBlock)} chunks)${Colors.RESET}")
-            "$baseSystemPrompt\n\nКонтекст:\n$contextBlock"
-        } else {
-            if (ragMode != RagMode.NO) println(" ${Colors.DARK_GRAY}(no relevant chunks found)${Colors.RESET}")
-            else println()
-            baseSystemPrompt
+        val fullPrompt = buildPrompt(baseSystemPrompt, chunks)
+        client.sendMessage(input, systemPromptOverride = fullPrompt, includeHistory = false)
+    }
+
+    private fun retrieveChunks(query: String, useRerank: Boolean): List<Chunk> {
+        val generator = OllamaEmbeddingGenerator()
+        val embedding = try {
+            generator.embed(query)
+        } catch (e: Exception) {
+            println()
+            println("${Colors.LIGHT_YELLOW}Embedding unavailable: ${e.message}${Colors.RESET}")
+            return emptyList()
         }
 
-        client.sendMessage(input, systemPromptOverride = fullPrompt, includeHistory = false)
+        val store = getVectorStore() ?: return emptyList()
+
+        return if (useRerank) {
+            val found = store.search(embedding.vector, SEARCH_TOP_K)
+            println(" ${Colors.DARK_GRAY}(Chunks found - ${found.size})${Colors.RESET}")
+            val thresholdFiltered = found.filter { it.score >= SIMILARITY_THRESHOLD.toFloat() }
+            println(" ${Colors.DARK_GRAY}(Chunks after similarity threshold ($SIMILARITY_THRESHOLD) - ${thresholdFiltered.size})${Colors.RESET}")
+            if (thresholdFiltered.isEmpty()) {
+                emptyList()
+            } else {
+                val texts = thresholdFiltered.map { it.chunk.content }
+                val reranked = rerankerClient?.rerank(query, texts, FINAL_TOP_K)
+                if (reranked.isNullOrEmpty()) {
+                    println(" ${Colors.DARK_GRAY}(rerank returned empty, using top-${FINAL_TOP_K} after threshold)${Colors.RESET}")
+                    thresholdFiltered.take(FINAL_TOP_K).map { it.chunk }
+                } else {
+                    reranked.mapNotNull { r ->
+                        thresholdFiltered.getOrNull(r.index)?.chunk
+                    }
+                }
+            }
+        } else {
+            val results = store.search(embedding.vector, SIMPLE_TOP_K)
+            println(" ${Colors.DARK_GRAY}(Chunks found - ${results.size})${Colors.RESET}")
+            results.map { it.chunk }
+        }
+    }
+
+    private fun buildPrompt(basePrompt: String, chunks: List<Chunk>): String {
+        if (chunks.isEmpty()) {
+            println(" ${Colors.DARK_GRAY}(no context)${Colors.RESET}")
+            return basePrompt
+        }
+        val contextBlock = chunks.joinToString("\n") { formatChunkLine(it) }
+        println(" ${Colors.DARK_GRAY}(RAG: ${chunks.size} chunks)${Colors.RESET}")
+        return "$basePrompt\n\nКонтекст:\n$contextBlock"
     }
 
     private fun getVectorStore(): VectorStore? {
         if (vectorStore == null) {
             val paths = listOf(
-                ".indexed/fixed.json",
-                "smartagent/.indexed/fixed.json"
+                ".indexed/structured.json",
+                "smartagent/.indexed/structured.json"
             )
             val indexFile = paths.firstOrNull { File(it).exists() }
             if (indexFile != null) {
@@ -90,17 +136,15 @@ internal class QuestionHandler(private val session: ChatSession, private val cli
         return baseContent
     }
 
-    internal fun resultsCount(contextBlock: String): Int {
-        return contextBlock.count { it == '\n' } + 1
-    }
-
-    internal fun formatContextBlock(results: List<SearchResult>): String =
-        results.joinToString("\n") { formatChunkLine(it.chunk) }
-
     internal fun formatChunkLine(chunk: Chunk): String =
         "[id: ${chunk.documentId}] [title: ${chunk.metadata.documentTitle}] [${chunk.documentId}_${chunk.index}]: \"${chunk.content}\""
 
     private companion object {
+        private const val SEARCH_TOP_K = 30
+        private const val SIMPLE_TOP_K = 8
+        private const val FINAL_TOP_K = 3
+        private const val SIMILARITY_THRESHOLD = 0.68
+
         private val FALLBACK_QUESTION_PROMPT = """
             Ты — агент для ответов на вопросы.
 
@@ -108,7 +152,7 @@ internal class QuestionHandler(private val session: ChatSession, private val cli
             1. Если контекст содержит ответ — используй его.
             2. Если контекст НЕ содержит ответа — ответь, используя свои знания.
             3. Ты ОБЯЗАН дать ответ. Никогда не отказывайся отвечать.
-            
+
             Формат ответа:
             Обязательно начинай ответ с одной из строк:
                - "Источник: контекст" — если ответ на основе контекста
