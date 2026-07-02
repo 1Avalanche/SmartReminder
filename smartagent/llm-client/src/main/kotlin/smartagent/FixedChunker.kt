@@ -22,11 +22,12 @@ class FixedChunker(
                         id = "${document.id}_$index",
                         content = text.substring(start, end),
                         documentId = document.id,
-                        index = index,
+                        chunkIndex = index,
                         metadata = ChunkMetadata(
                             documentTitle = document.title,
                             documentSource = document.metadata.source,
-                            extension = document.metadata.extension
+                            extension = document.metadata.extension,
+                            chunkIndex = index
                         )
                     )
                 )

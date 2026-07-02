@@ -27,13 +27,12 @@ class FileScanner(
             "go", "rs", "cpp", "c", "cs", "swift", "scala", "rb",
             "sh", "bash", "zsh", "dart",
             "h", "hpp", "php", "pl", "pm", "lua", "r",
-            "json", "xml", "yaml", "yml", "toml", "csv", "tsv",
+            "xml", "yaml", "yml", "toml", "csv", "tsv",
             "ini", "cfg", "conf", "properties", "env",
             "md", "markdown", "txt", "html", "htm", "css", "scss", "sass", "less",
             "rst", "adoc", "tex",
             "gradle", "cmake",
-            "sql", "ps1", "bat", "cmd",
-            "log"
+            "sql", "ps1", "bat", "cmd"
         )
         val DEFAULT_ALLOWED_TEXT_FILENAMES = setOf(
             "makefile", "dockerfile", "vagrantfile",

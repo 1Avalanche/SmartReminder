@@ -50,9 +50,9 @@ class FixedChunkerTest {
     @Test
     fun `chunk index is sequential`() {
         val chunks = FixedChunker(3).chunk(listOf(doc("abcdefghi")))
-        assertEquals(0, chunks[0].index)
-        assertEquals(1, chunks[1].index)
-        assertEquals(2, chunks[2].index)
+        assertEquals(0, chunks[0].chunkIndex)
+        assertEquals(1, chunks[1].chunkIndex)
+        assertEquals(2, chunks[2].chunkIndex)
     }
 
     @Test
@@ -75,6 +75,13 @@ class FixedChunkerTest {
         assertEquals("myfile.kt", chunks[0].metadata.documentTitle)
         assertEquals("src/myfile.kt", chunks[0].metadata.documentSource)
         assertEquals("kt", chunks[0].metadata.extension)
+    }
+
+    @Test
+    fun `metadata chunkIndex reflects chunk position`() {
+        val chunks = FixedChunker(chunkSize = 4, overlapSize = 0).chunk(listOf(doc("abcdefgh")))
+        assertEquals(0, chunks[0].metadata.chunkIndex)
+        assertEquals(1, chunks[1].metadata.chunkIndex)
     }
 
     @Test

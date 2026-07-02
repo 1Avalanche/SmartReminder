@@ -2,7 +2,6 @@ package smartagent
 
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
-import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.Json
 import java.io.File
 
@@ -33,12 +32,13 @@ class JsonVectorIndexPersistence : VectorIndexPersistence {
         id = id,
         content = content,
         documentId = documentId,
-        index = index,
+        index = chunkIndex,
         metadata = ChunkMetadataDto(
             documentTitle = metadata.documentTitle,
             documentSource = metadata.documentSource,
             extension = metadata.extension,
-            sectionPath = metadata.sectionPath
+            sectionPath = metadata.sectionPath,
+            chunkIndex = chunkIndex
         )
     )
 
@@ -46,12 +46,13 @@ class JsonVectorIndexPersistence : VectorIndexPersistence {
         id = id,
         content = content,
         documentId = documentId,
-        index = index,
+        chunkIndex = index,
         metadata = ChunkMetadata(
             documentTitle = metadata.documentTitle,
             documentSource = metadata.documentSource,
             extension = metadata.extension,
-            sectionPath = metadata.sectionPath
+            sectionPath = metadata.sectionPath,
+            chunkIndex = metadata.chunkIndex
         )
     )
 
@@ -75,6 +76,7 @@ class JsonVectorIndexPersistence : VectorIndexPersistence {
         val documentTitle: String,
         val documentSource: String,
         val extension: String?,
-        val sectionPath: List<String>
+        val sectionPath: List<String>,
+        val chunkIndex: Int = 0
     )
 }

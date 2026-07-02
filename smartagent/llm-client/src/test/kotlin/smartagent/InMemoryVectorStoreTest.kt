@@ -125,7 +125,7 @@ class InMemoryVectorStoreTest {
             id = "c1",
             content = "test content",
             documentId = "doc1",
-            index = 0,
+            chunkIndex = 0,
             metadata = ChunkMetadata("Test Doc", "test.md", "md")
         )
         store.add(floatArrayOf(1f, 0f, 0f), chunk)
@@ -170,7 +170,7 @@ class InMemoryVectorStoreTest {
                 id = "c${store.size()}",
                 content = "content ${store.size()}",
                 documentId = "doc",
-                index = store.size(),
+                chunkIndex = store.size(),
                 metadata = ChunkMetadata("Doc", "doc.md", "md")
             )
         )

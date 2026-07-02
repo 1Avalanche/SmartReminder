@@ -2,6 +2,8 @@ package smartagent
 
 import java.io.File
 
+internal data class RankedChunk(val chunk: Chunk, val score: Double?)
+
 internal class QuestionHandler(
     private val session: ChatSession,
     private val client: ChatClient,
@@ -14,7 +16,7 @@ internal class QuestionHandler(
 
         val baseSystemPrompt = loadSystemPrompt()
 
-        val chunks = when (ragMode) {
+        val chunks: List<RankedChunk> = when (ragMode) {
             RagMode.NO -> {
                 println()
                 emptyList()
@@ -50,11 +52,16 @@ internal class QuestionHandler(
             }
         }
 
+        if (ragMode != RagMode.NO && chunks.isEmpty()) {
+            println("${Colors.LIGHT_YELLOW}Запрашиваемые данные не найдены. Попробуйте переформулировать вопрос.${Colors.RESET}")
+            return
+        }
+
         val fullPrompt = buildPrompt(baseSystemPrompt, chunks)
         client.sendMessage(input, systemPromptOverride = fullPrompt, includeHistory = false)
     }
 
-    private fun retrieveChunks(query: String, useRerank: Boolean): List<Chunk> {
+    private fun retrieveChunks(query: String, useRerank: Boolean): List<RankedChunk> {
         val generator = OllamaEmbeddingGenerator()
         val embedding = try {
             generator.embed(query)
@@ -75,38 +82,36 @@ internal class QuestionHandler(
                 emptyList()
             } else {
                 val texts = thresholdFiltered.map { it.chunk.content }
-                val reranked = rerankerClient?.rerank(query, texts, FINAL_TOP_K)
-                if (reranked.isNullOrEmpty()) {
-                    println(" ${Colors.DARK_GRAY}(rerank returned empty, using top-${FINAL_TOP_K} after threshold)${Colors.RESET}")
-                    thresholdFiltered.take(FINAL_TOP_K).map { it.chunk }
-                } else {
-                    reranked.mapNotNull { r ->
-                        thresholdFiltered.getOrNull(r.index)?.chunk
-                    }
+                val reranked = rerankerClient?.rerank(query, texts, FINAL_TOP_K) ?: emptyList()
+                val ranked = reranked.mapNotNull { r ->
+                    thresholdFiltered.getOrNull(r.index)?.let { RankedChunk(it.chunk, r.score) }
                 }
+                val scoreFiltered = ranked.filter { (it.score ?: -1.0) >= RERANK_SCORE_THRESHOLD }
+                println(" ${Colors.DARK_GRAY}(Chunks after rerank score threshold ($RERANK_SCORE_THRESHOLD) - ${scoreFiltered.size})${Colors.RESET}")
+                scoreFiltered
             }
         } else {
             val results = store.search(embedding.vector, SIMPLE_TOP_K)
             println(" ${Colors.DARK_GRAY}(Chunks found - ${results.size})${Colors.RESET}")
-            results.map { it.chunk }
+            results.map { RankedChunk(it.chunk, it.score.toDouble()) }
         }
     }
 
-    private fun buildPrompt(basePrompt: String, chunks: List<Chunk>): String {
+    private fun buildPrompt(basePrompt: String, chunks: List<RankedChunk>): String {
         if (chunks.isEmpty()) {
             println(" ${Colors.DARK_GRAY}(no context)${Colors.RESET}")
             return basePrompt
         }
-        val contextBlock = chunks.joinToString("\n") { formatChunkLine(it) }
+        val contextBlock = chunks.joinToString("\n\n") { formatChunkBlock(it) }
         println(" ${Colors.DARK_GRAY}(RAG: ${chunks.size} chunks)${Colors.RESET}")
-        return "$basePrompt\n\nКонтекст:\n$contextBlock"
+        return "$basePrompt\n\n<context>\n$contextBlock\n</context>"
     }
 
     private fun getVectorStore(): VectorStore? {
         if (vectorStore == null) {
             val paths = listOf(
-                ".indexed/fixed.json",
-                "smartagent/.indexed/fixed.json"
+                ".indexed/structured.json",
+                "smartagent/.indexed/structured.json"
             )
             val indexFile = paths.firstOrNull { File(it).exists() }
             if (indexFile != null) {
@@ -136,32 +141,54 @@ internal class QuestionHandler(
         return baseContent
     }
 
-    internal fun formatChunkLine(chunk: Chunk): String =
-        "[id: ${chunk.documentId}] [title: ${chunk.metadata.documentTitle}] [${chunk.documentId}_${chunk.index}]: \"${chunk.content}\""
+    internal fun formatChunkBlock(ranked: RankedChunk): String {
+        val chunk = ranked.chunk
+        val section = chunk.metadata.sectionPath.joinToString(" > ")
+        val score = ranked.score?.let { "%.4f".format(java.util.Locale.ROOT, it) } ?: "n/a"
+        return buildString {
+            appendLine("<chunk>")
+            append("  <source")
+            append(" file=\"${chunk.metadata.documentSource}\"")
+            append(" title=\"${chunk.metadata.documentTitle}\"")
+            chunk.metadata.extension?.let { append(" ext=\"$it\"") }
+            if (section.isNotEmpty()) append(" section=\"$section\"")
+            append(" index=\"${chunk.metadata.chunkIndex}\"")
+            appendLine("/>")
+            appendLine("  <score>$score</score>")
+            appendLine("  <content>")
+            append(chunk.content.trimEnd())
+            appendLine()
+            appendLine("  </content>")
+            append("</chunk>")
+        }
+    }
 
     private companion object {
         private const val SEARCH_TOP_K = 30
         private const val SIMPLE_TOP_K = 8
         private const val FINAL_TOP_K = 5
         private const val SIMILARITY_THRESHOLD = 0.68
+        private const val RERANK_SCORE_THRESHOLD = 0.1
 
         private val FALLBACK_QUESTION_PROMPT = """
-            Ты — агент для ответов на вопросы.
+            Ты — агент для ответов на вопросы строго по предоставленному контексту.
 
             Правила:
-            1. Если контекст содержит ответ — используй его.
-            2. Если контекст НЕ содержит ответа — ответь, используя свои знания.
-            3. Ты ОБЯЗАН дать ответ. Никогда не отказывайся отвечать.
+            1. Отвечай ТОЛЬКО на основе информации из блоков <context>. Никогда не используй свои знания.
+            2. Если в контексте нет релевантной информации — ответь ровно одной фразой: «В контексте не найдено подходящей информации».
+            3. Не домысливай, не интерпретируй шире контекста, не добавляй факты из своих знаний.
 
-            Формат ответа:
-            Обязательно начинай ответ с одной из строк:
-               - "Источник: контекст" — если ответ на основе контекста
-               - "Источник: знания" — если ответ на основе твоих знаний
-               - "Источник: контекст и знания" — если комбинируешь
+            Формат ответа (когда ответ найден):
+            **Источник:** file="<documentSource>" index=<chunkIndex>
+            **Цитата:** «<дословная цитата из контекста>»
+            **Ответ:** <твой ответ, основанный строго на цитате>
+
+            Если релевантных чанков несколько — приведи источник и цитату для каждого.
 
             Запрещено:
-            - Говорить «нет в контексте», «не могу ответить», «недостаточно информации»
-            - Возвращать пустой ответ
+            - Использовать знания вне контекста
+            - Говорить «на основе моих знаний», «я думаю», «вероятно»
+            - Возвращать пустой ответ без фразы-заглушки
         """.trimIndent()
     }
 }

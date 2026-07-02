@@ -109,7 +109,7 @@ private fun runRepl(
 ) {
     var indexPath: String? = null
     var indexStrategy = "fixed"
-    var ragMode = RagMode.SIMPLE
+    var ragMode = RagMode.RERANK
     val rerankerClient = run {
             val key = Config.apiKey(ModelConfig.RERANK)
             if (key != null) RerankerClient(key) else null
@@ -279,7 +279,7 @@ Index mode commands (/mode index):
   /index-run                      Run indexing (saves to <path>/.indexed/<strategy>.json)
 
 Question mode commands (/mode question):
-  /rag-mode no|simple|rerank      Set RAG mode (default: simple)
+  /rag-mode no|simple|rerank      Set RAG mode (default: rerank)
                                    no     — only LLM, no context
                                    simple — search + top-3 chunks + context
                                    rerank — search + threshold + reranker + top-3 + context

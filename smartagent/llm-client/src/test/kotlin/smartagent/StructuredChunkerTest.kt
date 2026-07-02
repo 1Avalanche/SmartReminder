@@ -120,6 +120,13 @@ class StructuredChunkerTest {
         assertEquals("md", chunks[0].metadata.extension)
     }
 
+    @Test
+    fun `metadata chunkIndex reflects chunk position in markdown`() {
+        val chunks = chunker.chunk(listOf(doc("# A\ntext a.\n\n# B\ntext b.")))
+        assertEquals(0, chunks[0].metadata.chunkIndex)
+        assertEquals(1, chunks[1].metadata.chunkIndex)
+    }
+
     // --- code mode ---
 
     private val codeChunker = StructuredChunker(minChunkSize = 1, overlapSize = 0)

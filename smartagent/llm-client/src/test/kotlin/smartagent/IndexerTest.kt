@@ -12,7 +12,7 @@ class IndexerTest {
     )
 
     private fun fakeChunk(id: String, documentId: String) = Chunk(
-        id = id, content = "chunk", documentId = documentId, index = 0,
+        id = id, content = "chunk", documentId = documentId, chunkIndex = 0,
         metadata = ChunkMetadata(documentTitle = "doc.md", documentSource = "doc.md", extension = "md")
     )
 

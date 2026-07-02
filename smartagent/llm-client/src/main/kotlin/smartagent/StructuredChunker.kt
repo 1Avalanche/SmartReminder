@@ -1,7 +1,5 @@
 package smartagent
 
-import kotlin.math.min
-
 class StructuredChunker(
     private val normalizer: TextNormalizer = DefaultTextNormalizer(),
     private val maxChunkSize: Int = 1500,
@@ -56,12 +54,13 @@ class StructuredChunker(
                 id = "${document.id}_$index",
                 content = text,
                 documentId = document.id,
-                index = index,
+                chunkIndex = index,
                 metadata = ChunkMetadata(
                     documentTitle = document.title,
                     documentSource = document.metadata.source,
                     extension = document.metadata.extension,
-                    sectionPath = path
+                    sectionPath = path,
+                    chunkIndex = index
                 )
             )
         }

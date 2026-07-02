@@ -9,4 +9,6 @@ object Colors {
     const val LIGHT_GRAY = "[90m"
     const val BRIGHT_WHITE = "[97m"
     const val LIGHT_VIOLET = "[38;5;189m"
+    const val BOLD     = "[1m"
+    const val BOLD_OFF = "[22m"
 }

@@ -86,7 +86,10 @@ internal class ChatClient(private val session: ChatSession) {
                     spinner.stop()
                     println()
                     println()
-                    println("${Colors.LIGHT_VIOLET}$displayText${Colors.RESET}\n")
+                    val rendered = displayText.replace(Regex("""\*\*(.+?)\*\*""")) {
+                        "${Colors.BOLD}${it.groupValues[1]}${Colors.BOLD_OFF}"
+                    }
+                    println("${Colors.LIGHT_VIOLET}$rendered${Colors.RESET}\n")
                     if (usage != null) {
                         val pct = usage.prompt_tokens * 100 / session.currentModel.contextWindow
                         println(Colors.LIGHT_YELLOW + "tokens → prompt: ${usage.prompt_tokens} | completion: ${usage.completion_tokens} | total: ${usage.total_tokens} | context: $pct%" + Colors.RESET)
