@@ -118,4 +118,66 @@ class FixedChunkerTest {
         assertEquals("abcd", chunks[0].content)
         assertEquals("efgh", chunks[1].content)
     }
+
+    // --- fix 2: normalization before splitting ---
+
+    @Test
+    fun `normalization applied once before splitting preserves correct overlap`() {
+        // Normalizer replaces CRLF with LF, shortening the text
+        // If normalization happened per-chunk, overlap positions would be wrong
+        val crlfNormalizer = object : TextNormalizer {
+            override fun normalize(text: String) = text.replace("\r\n", "\n")
+        }
+        // Content: 10 CRLF-terminated lines, each "ab\r\n" = 4 chars → normalized "ab\n" = 3 chars
+        val content = "ab\r\n".repeat(5)  // 20 chars raw, 15 chars normalized
+        val chunker = FixedChunker(chunkSize = 9, overlapSize = 3, minChunkSize = 1, normalizer = crlfNormalizer)
+        val chunks = chunker.chunk(listOf(doc(content)))
+        // All chunk content should be from normalized text (no \r chars)
+        assertTrue(chunks.all { '\r' !in it.content }, "No CR chars expected after normalization")
+    }
+
+    // --- fix 4: word boundary splitting ---
+
+    @Test
+    fun `chunk does not split in the middle of a word`() {
+        // Without fix: chunkSize=8 rawEnd=8 lands mid-"world" → chunks "hello wo" / "rld foo"
+        // With word-boundary + overlapSize=2: splits at space → "hello" / "world" / "foo"
+        val chunker = FixedChunker(chunkSize = 8, overlapSize = 2, minChunkSize = 1)
+        val chunks = chunker.chunk(listOf(doc("hello world foo")))
+        assertTrue(chunks.any { "world" in it.content }, "word 'world' must not be split across chunks")
+        assertTrue(chunks.any { "hello" in it.content })
+        assertTrue(chunks.any { "foo" in it.content })
+    }
+
+    @Test
+    fun `falls back to raw end when no word boundary found in second half`() {
+        // No spaces → wordBoundaryEnd returns rawEnd → same behavior as before
+        val chunker = FixedChunker(chunkSize = 4, overlapSize = 0, minChunkSize = 1)
+        val chunks = chunker.chunk(listOf(doc("abcdefgh")))
+        assertEquals(2, chunks.size)
+        assertEquals("abcd", chunks[0].content)
+        assertEquals("efgh", chunks[1].content)
+    }
+
+    // --- fix 5: tiny last chunk merged ---
+
+    @Test
+    fun `tiny last chunk is merged into previous`() {
+        // "abcdefg" = 7 chars, chunkSize=5, advance=5
+        // chunk 1: [0,5)="abcde", chunk 2: [5,7)="fg" (2 chars < minChunkSize=3) → merge
+        val chunker = FixedChunker(chunkSize = 5, overlapSize = 0, minChunkSize = 3)
+        val chunks = chunker.chunk(listOf(doc("abcdefg")))
+        assertEquals(1, chunks.size)
+        assertEquals("abcdefg", chunks[0].content)
+    }
+
+    @Test
+    fun `last chunk above minChunkSize is not merged`() {
+        // "abcdefgh" = 8 chars, chunkSize=5, advance=5
+        // chunk 1: [0,5)="abcde", chunk 2: [5,8)="fgh" (3 chars >= minChunkSize=3) → no merge
+        val chunker = FixedChunker(chunkSize = 5, overlapSize = 0, minChunkSize = 3)
+        val chunks = chunker.chunk(listOf(doc("abcdefgh")))
+        assertEquals(2, chunks.size)
+        assertEquals("fgh", chunks[1].content)
+    }
 }

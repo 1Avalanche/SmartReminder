@@ -105,8 +105,8 @@ internal class QuestionHandler(
     private fun getVectorStore(): VectorStore? {
         if (vectorStore == null) {
             val paths = listOf(
-                ".indexed/structured.json",
-                "smartagent/.indexed/structured.json"
+                ".indexed/fixed.json",
+                "smartagent/.indexed/fixed.json"
             )
             val indexFile = paths.firstOrNull { File(it).exists() }
             if (indexFile != null) {
@@ -142,7 +142,7 @@ internal class QuestionHandler(
     private companion object {
         private const val SEARCH_TOP_K = 30
         private const val SIMPLE_TOP_K = 8
-        private const val FINAL_TOP_K = 3
+        private const val FINAL_TOP_K = 5
         private const val SIMILARITY_THRESHOLD = 0.68
 
         private val FALLBACK_QUESTION_PROMPT = """

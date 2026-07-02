@@ -209,4 +209,88 @@ class StructuredChunkerTest {
         val chunks = chunker.chunk(listOf(noExtDoc))
         assertEquals(2, chunks.size)
     }
+
+    // --- fix 1: short functions not dropped ---
+
+    private fun codeDocKt(id: String, content: String) =
+        Document(id, id, content, DocumentMetadata(extension = "kt", source = id))
+
+    @Test
+    fun `short first function carries forward into next declaration`() {
+        val c = StructuredChunker(minChunkSize = 50, overlapSize = 0)
+        val largeBody = (1..5).joinToString("\n") { "    val v$it = $it" }
+        val content = "fun tiny() {}\n\nfun large() {\n$largeBody\n}"
+        val chunks = c.chunk(listOf(codeDocKt("f.kt", content)))
+        assertTrue(chunks.any { "fun tiny" in it.content }, "tiny() must not be dropped")
+    }
+
+    @Test
+    fun `short function between large ones is merged not dropped`() {
+        val c = StructuredChunker(minChunkSize = 50, overlapSize = 0)
+        val largeBody = (1..5).joinToString("\n") { "    val v$it = $it" }
+        val content = "fun large1() {\n$largeBody\n}\n\nfun tiny() {}\n\nfun large2() {\n$largeBody\n}"
+        val chunks = c.chunk(listOf(codeDocKt("f.kt", content)))
+        assertTrue(chunks.any { "fun tiny" in it.content }, "tiny() must not be dropped")
+    }
+
+    // --- fix 3: no split mid-brace ---
+
+    private fun balancedBraces(chunk: smartagent.Chunk): Boolean {
+        val open = chunk.content.count { it == '{' }
+        val close = chunk.content.count { it == '}' }
+        return open == close
+    }
+
+    @Test
+    fun `large function body is not split mid-brace`() {
+        // 4-line body → total ~94 chars (< 2*80=160, no emergency split)
+        // pendingFlush fires mid-body, defers until closing } at braceDepth=0
+        val c = StructuredChunker(maxChunkSize = 80, minChunkSize = 1, overlapSize = 0)
+        val body = (1..4).joinToString("\n") { "    val v$it = $it * $it" }
+        val content = "fun compute() {\n$body\n}"
+        val chunks = c.chunk(listOf(codeDocKt("f.kt", content)))
+        assertTrue(chunks.all { balancedBraces(it) }, "All chunks must have balanced braces")
+    }
+
+    @Test
+    fun `two large functions split at function boundary not mid-body`() {
+        // each function ~89 chars (< 2*60=120, no emergency split)
+        val c = StructuredChunker(maxChunkSize = 60, minChunkSize = 1, overlapSize = 0)
+        val body = (1..5).joinToString("\n") { "    val v$it = $it" }
+        val content = "fun foo() {\n$body\n}\n\nfun bar() {\n$body\n}"
+        val chunks = c.chunk(listOf(codeDocKt("f.kt", content)))
+        assertTrue(chunks.all { balancedBraces(it) }, "All chunks must have balanced braces")
+        assertTrue(chunks.any { "fun foo" in it.content })
+        assertTrue(chunks.any { "fun bar" in it.content })
+    }
+
+    // --- fix 4: no noisy separator in continuation chunks ---
+
+    @Test
+    fun `continuation chunk has no noisy separator comment`() {
+        val c = StructuredChunker(maxChunkSize = 50, minChunkSize = 1, overlapSize = 0, preserveDeclarations = true)
+        val body = (1..30).joinToString("\n") { "    val v$it = $it" }
+        val content = "fun huge() {\n$body\n}"
+        val chunks = c.chunk(listOf(codeDocKt("f.kt", content)))
+        assertTrue(chunks.size > 1, "Expected multiple chunks for huge function")
+        assertTrue(chunks.none { "продолжение" in it.content }, "No Russian separator expected")
+        assertTrue(chunks.none { "// ... continued" in it.content }, "No English separator expected")
+    }
+
+    // --- fix 5: splitByFixedSize prefers newline over space ---
+
+    @Test
+    fun `splitByFixedSize prefers newline boundary over space`() {
+        val c = StructuredChunker(maxChunkSize = 50, minChunkSize = 1, overlapSize = 0)
+        val longLine = "a".repeat(30) + " " + "b".repeat(30)  // 61 chars, space at pos 30
+        val content = "# Section\n$longLine\nshort line"
+        val doc = Document("f.md", "f.md", content, DocumentMetadata("f.md", "md"))
+        val chunks = c.chunk(listOf(doc))
+        // newline-preference: a's and b's stay in the same chunk
+        // space-preference (old): only a's in first chunk, b's in second
+        assertTrue(
+            chunks.any { "b".repeat(30) in it.content && "a".repeat(30) in it.content },
+            "Long line should not be split at internal space"
+        )
+    }
 }

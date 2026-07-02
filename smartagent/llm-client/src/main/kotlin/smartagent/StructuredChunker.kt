@@ -30,17 +30,24 @@ class StructuredChunker(
     private fun chunkDocument(document: Document): List<Chunk> {
         val ext = document.metadata.extension
         val cleanContent = normalizer.normalize(document.content)
+        val isCode = ext in codeExtensions
         val sections = when {
             ext in markdownExtensions -> extractMarkdownSections(cleanContent)
-            ext in codeExtensions -> extractCodeSectionsOptimized(cleanContent)
+            isCode -> extractCodeSectionsOptimized(cleanContent)
             else -> extractParagraphSections(cleanContent)
         }
 
-        val sizedSections = sections.flatMap { (path, text) ->
-            if (text.length > maxChunkSize) {
-                splitByFixedSize(text).map { path to it.second }
-            } else {
-                listOf(path to text)
+        // code scanner already manages size via pendingFlush/emergency split; secondary split
+        // would break brace balance by cutting inside semantically complete blocks
+        val sizedSections = if (isCode) {
+            sections
+        } else {
+            sections.flatMap { (path, text) ->
+                if (text.length > maxChunkSize) {
+                    splitByFixedSize(text).map { path to it.second }
+                } else {
+                    listOf(path to text)
+                }
             }
         }
 
@@ -69,6 +76,8 @@ class StructuredChunker(
         var currentDeclaration = ""
         val currentPath = mutableListOf<String>()
         var wasPreviousLineBlank = false
+        var braceDepth = 0
+        var pendingFlush = false
         var lineIndex = 0
 
         while (lineIndex < lines.size) {
@@ -95,14 +104,32 @@ class StructuredChunker(
                 val isTopLevel = indentation == 0
 
                 if (isTopLevel || wasPreviousLineBlank) {
-                    if (currentChunk.length >= minChunkSize) {
-                        sections.add(currentPath.toList() to currentChunk.toString().trim())
+                    val chunkText = currentChunk.toString().trim()
+                    when {
+                        chunkText.length >= minChunkSize -> {
+                            sections.add(currentPath.toList() to chunkText)
+                            currentChunk.clear()
+                            currentPath.clear()
+                            braceDepth = 0
+                            pendingFlush = false
+                        }
+                        sections.isNotEmpty() -> {
+                            val (lastPath, lastText) = sections.last()
+                            sections[sections.lastIndex] = lastPath to "$lastText\n$chunkText"
+                            currentChunk.clear()
+                            currentPath.clear()
+                            braceDepth = 0
+                            pendingFlush = false
+                        }
+                        else -> {
+                            // carry forward: keep content, update path only
+                            currentPath.clear()
+                            braceDepth = 0
+                            pendingFlush = false
+                        }
                     }
 
-                    currentChunk.clear()
-                    currentPath.clear()
                     currentDeclaration = line
-
                     val declName = extractDeclarationName(line)
                     if (declName.isNotBlank()) {
                         currentPath.add(declName)
@@ -112,24 +139,41 @@ class StructuredChunker(
 
             wasPreviousLineBlank = false
             currentChunk.appendLine(line)
+            braceDepth += line.count { it == '{' } - line.count { it == '}' }
 
-            if (currentChunk.length > maxChunkSize) {
+            if (currentChunk.length > maxChunkSize && !pendingFlush) {
+                pendingFlush = true
+            }
+
+            // flush at safe brace boundary — block closed cleanly, no continuation header needed
+            if (pendingFlush && braceDepth <= 0) {
+                val chunkText = currentChunk.toString().trim()
+                when {
+                    chunkText.length >= minChunkSize -> sections.add(currentPath.toList() to chunkText)
+                    sections.isNotEmpty() -> {
+                        val (lastPath, lastText) = sections.last()
+                        sections[sections.lastIndex] = lastPath to "$lastText\n$chunkText"
+                    }
+                    else -> sections.add(currentPath.toList() to chunkText)
+                }
+                currentChunk.clear()
+                braceDepth = 0
+                pendingFlush = false
+            }
+
+            // emergency split when deeply nested block far exceeds limit
+            if (pendingFlush && currentChunk.length > maxChunkSize * 2) {
                 val chunkText = currentChunk.toString()
                 val splitPoint = findBestSplitPoint(chunkText, maxChunkSize)
-
                 val part = chunkText.substring(0, splitPoint).trim()
                 if (part.length >= minChunkSize) {
                     sections.add(currentPath.toList() to part)
                 }
-
                 val remaining = chunkText.substring(splitPoint)
                 currentChunk.clear()
-
                 if (preserveDeclarations && currentDeclaration.isNotBlank()) {
                     currentChunk.appendLine(currentDeclaration)
-                    currentChunk.appendLine("// ... продолжение ...")
                 }
-
                 if (overlapSize > 0) {
                     val overlapStart = maxOf(splitPoint - overlapSize, 0)
                     val overlap = chunkText.substring(overlapStart, splitPoint).trimStart()
@@ -137,8 +181,9 @@ class StructuredChunker(
                         currentChunk.appendLine(overlap)
                     }
                 }
-
                 currentChunk.append(remaining.trimStart())
+                braceDepth = 0
+                pendingFlush = false
             }
 
             lineIndex++
@@ -221,18 +266,25 @@ class StructuredChunker(
         var start = 0
 
         while (start < content.length) {
-            val end = minOf(start + maxChunkSize, content.length)
-            var chunk = content.substring(start, end)
+            val hardEnd = minOf(start + maxChunkSize, content.length)
 
-            if (end < content.length) {
-                val lastSpace = chunk.lastIndexOf(' ')
-                if (lastSpace > minChunkSize) {
-                    chunk = chunk.substring(0, lastSpace)
-                }
+            if (hardEnd == content.length) {
+                val chunk = content.substring(start).trim()
+                if (chunk.isNotEmpty()) chunks.add(emptyList<String>() to chunk)
+                break
             }
 
-            chunks.add(emptyList<String>() to chunk.trim())
-            val advance = maxOf(chunk.length - overlapSize, maxChunkSize / 4)
+            val extEnd = minOf(start + maxChunkSize + 100, content.length)
+            val raw = content.substring(start, extEnd)
+            val splitPoint = findBestSplitPoint(raw, maxChunkSize)
+            val chunk = raw.substring(0, splitPoint).trim()
+
+            if (chunk.isEmpty()) {
+                start += maxChunkSize / 4
+                continue
+            }
+            chunks.add(emptyList<String>() to chunk)
+            val advance = maxOf(splitPoint - overlapSize, maxChunkSize / 4)
             start += advance
         }
 

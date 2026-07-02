@@ -48,7 +48,7 @@ class RerankerClient(
         val relevanceScore: Double
     )
 
-    fun rerank(query: String, documents: List<String>, topN: Int = 3): List<RerankResult> {
+    fun rerank(query: String, documents: List<String>, topN: Int = 5): List<RerankResult> {
         if (documents.isEmpty()) return emptyList()
 
         val requestBodyString = json.encodeToString(
