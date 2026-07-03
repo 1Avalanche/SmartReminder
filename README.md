@@ -16,6 +16,8 @@
 
 Требует Java 17+.
 
+Полный список команд и описание режимов — в [smartagent/cli/README.md](smartagent/cli/README.md).
+
 ```bash
 bash smartagent/install.sh
 ```
@@ -66,22 +68,31 @@ OPENROUTER_STUDY_API_KEY=sk-...
 | Имя | Описание |
 |---|---|
 | `deepseek` | deepseek-v4-pro (по умолчанию) |
-| `qwen` | qwen3-235b-a22b-thinking |
-| `qwen-low` | qwen3-8b, быстрее и дешевле |
+| `qwen` | qwen/qwen3.7-plus |
+| `qwen-low` | qwen/qwen3-8b, быстрее и дешевле |
 
-### Команды в чате
+### Режимы работы
+
+| Режим | Описание |
+|---|---|
+| `question` | RAG-поиск по индексу + LLM (по умолчанию) |
+| `chat` | Прямой чат с LLM |
+| `code-analyzer` | Ревью кода, поиск багов, рефакторинг |
+| `assist` | Agentic loop с MCP-инструментами |
+| `index` | Индексирование файлов репозитория для RAG |
+| `architect` | Управление задачами через многоагентный pipeline |
+
+### Основные команды
 
 ```
-/help                  — справка
+/help                  — полная справка
+/mode <name>           — сменить режим
 /models                — список моделей
 /model <name>          — сменить модель
-/repo [path]           — показать или установить репозиторий
+/repo <path>           — установить репозиторий
 /files [pattern]       — список файлов в репозитории
 /tree [depth]          — дерево файлов (по умолчанию глубина 3)
 /read <file>           — загрузить файл в контекст
-/context               — показать загруженные файлы
-/context clear         — убрать файлы из контекста
-/history               — история запросов
 /clear                 — очистить историю и контекст
 /exit                  — выход
 ```
