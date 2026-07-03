@@ -58,7 +58,7 @@ internal class QuestionHandler(
         }
 
         val fullPrompt = buildPrompt(baseSystemPrompt, chunks)
-        client.sendMessage(input, systemPromptOverride = fullPrompt, includeHistory = false)
+        client.sendMessage(input, systemPromptOverride = fullPrompt, includeHistory = true)
     }
 
     private fun retrieveChunks(query: String, useRerank: Boolean): List<RankedChunk> {
@@ -110,8 +110,8 @@ internal class QuestionHandler(
     private fun getVectorStore(): VectorStore? {
         if (vectorStore == null) {
             val paths = listOf(
-                ".indexed/structured.json",
-                "smartagent/.indexed/structured.json"
+                ".indexed/fixed.json",
+                "smartagent/.indexed/fixed.json"
             )
             val indexFile = paths.firstOrNull { File(it).exists() }
             if (indexFile != null) {
@@ -167,8 +167,8 @@ internal class QuestionHandler(
         private const val SEARCH_TOP_K = 30
         private const val SIMPLE_TOP_K = 8
         private const val FINAL_TOP_K = 5
-        private const val SIMILARITY_THRESHOLD = 0.68
-        private const val RERANK_SCORE_THRESHOLD = 0.1
+        private const val SIMILARITY_THRESHOLD = 0.65
+        private const val RERANK_SCORE_THRESHOLD = 0.01
 
         private val FALLBACK_QUESTION_PROMPT = """
             Ты — агент для ответов на вопросы строго по предоставленному контексту.
@@ -183,7 +183,7 @@ internal class QuestionHandler(
             **Цитата:** «<дословная цитата из контекста>»
             **Ответ:** <твой ответ, основанный строго на цитате>
 
-            Если релевантных чанков несколько — приведи источник и цитату для каждого.
+            Если релевантных чанков несколько — приведи источник и цитату для каждого. Ответ верни всегда только один, используя все знания из релевантных чанков.
 
             Запрещено:
             - Использовать знания вне контекста
