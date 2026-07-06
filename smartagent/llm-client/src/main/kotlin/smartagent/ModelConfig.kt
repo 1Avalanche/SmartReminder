@@ -49,7 +49,8 @@ enum class ModelConfig(
     val apiKeyProperty: String,
     val url: String,
     val contextWindow: Int,
-    val aliases: List<String> = emptyList()
+    val aliases: List<String> = emptyList(),
+    val isLocal: Boolean = false
 ) {
     DEEPSEEK(
         shortName = "deepseek",
@@ -86,6 +87,26 @@ enum class ModelConfig(
         url = "https://openrouter.ai/api/v1",
         contextWindow = 0,
         aliases = listOf("reranker")
+    ),
+    QWEN_LOCAL(
+        shortName = "qwen-local",
+        description = "qwen2.5:14b — локально через Ollama",
+        apiModelId = "qwen2.5:14b",
+        apiKeyProperty = "",
+        url = "http://localhost:11434/v1/chat/completions",
+        contextWindow = 32_000,
+        aliases = listOf("qwen2.5", "qwen2.5-14b"),
+        isLocal = true
+    ),
+    GEMMA_LOCAL(
+        shortName = "gemma-local",
+        description = "gemma3:12b — локально через Ollama",
+        apiModelId = "gemma3:12b",
+        apiKeyProperty = "",
+        url = "http://localhost:11434/v1/chat/completions",
+        contextWindow = 128_000,
+        aliases = listOf("gemma3", "gemma3-12b"),
+        isLocal = true
     );
 
     companion object {

@@ -34,7 +34,8 @@ object Config {
     }
 
     fun apiKey(model: ModelConfig): String? =
-        localProperties[model.apiKeyProperty]
+        if (model.isLocal) "ollama"
+        else localProperties[model.apiKeyProperty]
             ?: System.getenv(model.apiKeyProperty)
             ?: System.getenv(model.apiKeyProperty.replace("_STUDY_", "_"))
 

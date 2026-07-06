@@ -15,11 +15,16 @@ internal class ChatClient(private val session: ChatSession) {
         .writeTimeout(60, TimeUnit.SECONDS)
         .build()
 
-    fun sendMessage(text: String, systemPromptOverride: String? = null, includeHistory: Boolean = true) {
+    fun sendMessage(
+        text: String,
+        systemPromptOverride: String? = null,
+        includeHistory: Boolean = true,
+        saveToHistory: Boolean = true
+    ): String? {
         val apiKey = Config.apiKey(session.currentModel)
         if (apiKey.isNullOrBlank()) {
             println("Error: ${session.currentModel.apiKeyProperty} not found in local.properties or environment")
-            return
+            return null
         }
 
         val spinner = Spinner()
@@ -66,8 +71,8 @@ internal class ChatClient(private val session: ChatSession) {
                     spinner.stop()
                     NetworkLogger.log(session.currentModel.url, reqHeaders, requestBody, response.code, resHeaders, body, "[MAIN_AGENT]")
                     println("Error ${response.code}: ${body.ifEmpty { "Unknown error" }}")
-                    session.addLogEntry(LogEntry(text, requestBody, body.ifEmpty { "HTTP ${response.code}" }))
-                    return
+                    if (saveToHistory) session.addLogEntry(LogEntry(text, requestBody, body.ifEmpty { "HTTP ${response.code}" }))
+                    return null
                 }
 
                 val chatResponse = json.decodeFromString<ChatResponse>(body)
@@ -78,7 +83,8 @@ internal class ChatClient(private val session: ChatSession) {
                     spinner.stop()
                     NetworkLogger.log(session.currentModel.url, reqHeaders, requestBody, response.code, resHeaders, body, "[MAIN_AGENT]")
                     println("Warning: empty response from the model")
-                    session.addLogEntry(LogEntry(text, requestBody, body))
+                    if (saveToHistory) session.addLogEntry(LogEntry(text, requestBody, body))
+                    return null
                 } else {
                     val (displayText, structured) = session.parseResponse(reply)
                     val responseForLog = json.encodeToString(structured ?: StructuredResponse(content = reply))
@@ -96,22 +102,25 @@ internal class ChatClient(private val session: ChatSession) {
                         session.addTokenEntry(usage)
                         session.updateLastPromptTokens(usage.prompt_tokens)
                     }
-                    session.addLogEntry(LogEntry(text, requestBody, responseForLog))
-                    if (session.shouldTriggerProfile()) Thread {
-                        ProfileAgent(session).update()
-                    }.apply { isDaemon = true }.start()
+                    if (saveToHistory) {
+                        session.addLogEntry(LogEntry(text, requestBody, responseForLog))
+                        if (session.shouldTriggerProfile()) Thread {
+                            ProfileAgent(session).update()
+                        }.apply { isDaemon = true }.start()
+                    }
+                    return displayText
                 }
-                break
             }
         } catch (e: Exception) {
             spinner.stop()
             if (escCanceller.wasCancelled) {
                 println("\n${Colors.LIGHT_YELLOW}Отменено.${Colors.RESET}")
-                return
+                return null
             }
             NetworkLogger.log(session.currentModel.url, emptyMap(), requestBody, 0, emptyMap(), "Error: ${e.message}", "[MAIN_AGENT]")
             println("Error: ${e.message}")
-            session.addLogEntry(LogEntry(text, requestBody, "Error: ${e.message}"))
+            if (saveToHistory) session.addLogEntry(LogEntry(text, requestBody, "Error: ${e.message}"))
+            return null
         } finally {
             escCanceller.stop()
             watcherThread.join(300)

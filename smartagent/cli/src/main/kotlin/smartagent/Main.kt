@@ -33,7 +33,7 @@ fun main(args: Array<String>) {
         }
     }
 
-    val targetMode = parsedArgs.initialMode ?: AgentMode.QUESTION
+    val targetMode = parsedArgs.initialMode ?: AgentMode.CHAT
     if (session.currentMode != targetMode) session.switchMode(targetMode)
 
     val client = ChatClient(session)
@@ -232,6 +232,16 @@ private fun runRepl(
                     println("${Colors.LIGHT_YELLOW}Unknown RAG mode: $value. Available: ${RagMode.entries.joinToString("|") { it.name.lowercase() }}${Colors.RESET}")
                 }
             }
+            // Scenario commands — available in chat mode
+            input == "/scenario on" -> {
+                if (session.currentMode != AgentMode.CHAT) {
+                    println("${Colors.LIGHT_YELLOW}/scenario is only available in chat mode. Use /mode chat first.${Colors.RESET}")
+                } else {
+                    ScenarioRunner(client, session).run()
+                }
+            }
+            input == "/scenario off" -> println("${Colors.DARK_GRAY}Scenario runs and completes automatically. No active scenario to stop.${Colors.RESET}")
+            input == "/scenario" -> println("${Colors.LIGHT_YELLOW}Usage: /scenario on | /scenario off${Colors.RESET}")
             // MCP commands — available in any mode
             input == "/mcp" || input.startsWith("/mcp ") -> AssistRepl.handle(input.removePrefix("/"))
             input.startsWith("/") -> println("${Colors.LIGHT_YELLOW}Unknown command: $input${Colors.RESET}")
@@ -293,6 +303,10 @@ Project commands:
   /feature pause                  Pause active project
   /feature resume                 Resume a paused project
   /feature info                   Show project details
+
+Scenario commands (chat mode only):
+  /scenario on                    Run questions from temp/scenario.json automatically
+  /scenario off                   (no-op — scenario completes on its own)
 
 MCP commands (any mode):
   /mcp list                       List registered MCP servers and status
