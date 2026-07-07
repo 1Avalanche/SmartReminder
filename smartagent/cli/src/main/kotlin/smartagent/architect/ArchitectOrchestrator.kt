@@ -25,10 +25,11 @@ internal class ArchitectOrchestrator(
     private val tokens: TokenTracker
 ) {
     private val promptDir: File = listOf(
-        "smartagent/src/main/kotlin/prompts/architect",
+        "cli/src/main/kotlin/prompts/architect",
+        "smartagent/cli/src/main/kotlin/prompts/architect",
         "src/main/kotlin/prompts/architect",
         "prompts/architect"
-    ).map(::File).firstOrNull { it.isDirectory } ?: File("smartagent/src/main/kotlin/prompts/architect")
+    ).map(::File).firstOrNull { it.isDirectory } ?: File("cli/src/main/kotlin/prompts/architect")
 
     fun process(userInput: String) {
         val invSpinner = AgentSpinner.start("InvariantAgent")
