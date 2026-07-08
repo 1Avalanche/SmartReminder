@@ -99,6 +99,7 @@ internal class ChatClient(private val session: ChatSession) {
                     if (usage != null) {
                         val pct = usage.prompt_tokens * 100 / session.currentModel.contextWindow
                         println(Colors.LIGHT_YELLOW + "tokens → prompt: ${usage.prompt_tokens} | completion: ${usage.completion_tokens} | total: ${usage.total_tokens} | context: $pct%" + Colors.RESET)
+                        println(Colors.LIGHT_YELLOW + "model  → ${session.currentModel.shortName}" + Colors.RESET)
                         session.addTokenEntry(usage)
                         session.updateLastPromptTokens(usage.prompt_tokens)
                     }
