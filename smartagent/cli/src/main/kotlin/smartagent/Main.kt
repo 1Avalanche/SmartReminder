@@ -65,8 +65,9 @@ fun main(args: Array<String>) {
             println("${Colors.DARK_GRAY}Type /rag-mode no|simple|rerank to set RAG mode, then type your question.${Colors.RESET}\n")
         }
         else -> {
+            val displayModel = if (session.currentMode == AgentMode.CHAT) ModelConfig.GEMMA_LOCAL.shortName else session.currentModel.shortName
             println("${Colors.LIGHT_YELLOW}SmartAgent готов к работе!${Colors.RESET}")
-            println("${Colors.DARK_GRAY}Model: ${session.currentModel.shortName} | Mode: ${session.currentMode.displayName}")
+            println("${Colors.DARK_GRAY}Model: $displayModel | Mode: ${session.currentMode.displayName}")
             println("Type /help for commands, /exit to quit.${Colors.RESET}\n")
         }
     }
@@ -110,6 +111,7 @@ private fun runRepl(
     var indexPath: String? = null
     var indexStrategy = "fixed"
     var ragMode = RagMode.RERANK
+    var chatSetting = ChatSetting.NO
     val rerankerClient = run {
             val key = Config.apiKey(ModelConfig.RERANK)
             if (key != null) RerankerClient(key) else null
@@ -219,6 +221,20 @@ private fun runRepl(
                 }
             }
             input == "/index-run" -> runIndexing(indexPath, indexStrategy)
+            // Chat mode commands
+            input == "/chat-setting" -> println("${Colors.LIGHT_YELLOW}Chat setting: ${chatSetting.displayName}  (no | optimum)${Colors.RESET}")
+            input.startsWith("/chat-setting ") -> {
+                val value = input.removePrefix("/chat-setting ").trim()
+                val newSetting = ChatSetting.fromString(value)
+                if (newSetting != null) {
+                    chatSetting = newSetting
+                    client.chatSetting = newSetting
+                    session.clear()
+                    println("${Colors.LIGHT_GREEN}Chat setting: ${chatSetting.displayName} (history cleared)${Colors.RESET}")
+                } else {
+                    println("${Colors.LIGHT_YELLOW}Unknown setting: $value. Available: no | optimum${Colors.RESET}")
+                }
+            }
             // Question mode commands
             input == "/rag-mode" -> println("RAG mode: ${ragMode.displayName()} — ${ragMode.description()}")
             input.startsWith("/rag-mode ") -> {
@@ -303,6 +319,12 @@ Project commands:
   /feature pause                  Pause active project
   /feature resume                 Resume a paused project
   /feature info                   Show project details
+
+Chat mode commands (/mode chat):
+  /chat-setting no|optimum        Set chat behaviour (default: no)
+                                   no      — no system prompt, plain chat
+                                   optimum — system prompt from chat_optimum.md, temp=0.2, ctx=8192, max=1024
+  Note: chat mode always uses gemma-local regardless of /model setting
 
 Scenario commands (chat mode only):
   /scenario on                    Run questions from temp/scenario.json automatically

@@ -14,13 +14,22 @@ data class Message(val role: String, val content: String)
 @Serializable
 data class Reasoning(@EncodeDefault val enabled: Boolean = false)
 
+@Serializable
+data class OllamaOptions(
+    @OptIn(ExperimentalSerializationApi::class)
+    @EncodeDefault(EncodeDefault.Mode.NEVER) val num_ctx: Int? = null
+)
+
 @OptIn(ExperimentalSerializationApi::class)
 @Serializable
 data class ChatRequest(
     val model: String,
     val messages: List<Message>,
     val transforms: List<String> = emptyList(),
-    @EncodeDefault val reasoning: Reasoning = Reasoning()
+    @EncodeDefault val reasoning: Reasoning = Reasoning(),
+    @EncodeDefault(EncodeDefault.Mode.NEVER) val temperature: Double? = null,
+    @EncodeDefault(EncodeDefault.Mode.NEVER) val max_tokens: Int? = null,
+    @EncodeDefault(EncodeDefault.Mode.NEVER) val options: OllamaOptions? = null
 )
 
 @Serializable

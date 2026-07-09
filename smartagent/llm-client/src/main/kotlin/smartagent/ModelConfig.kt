@@ -1,5 +1,14 @@
 package smartagent
 
+enum class ChatSetting(val displayName: String) {
+    NO("no"),
+    OPTIMUM("optimum");
+
+    companion object {
+        fun fromString(s: String) = entries.find { it.displayName.equals(s, ignoreCase = true) }
+    }
+}
+
 val CHAT_BASE_PROMPT = """
     Ты - персональный ассистент. Твоя задача - помочь пользователю решить любую его задачу. 
     Отвечай по делу, не фантазируй. Предоставляй порядок своих рассуждений.
