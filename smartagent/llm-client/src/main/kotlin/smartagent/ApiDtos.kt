@@ -14,10 +14,12 @@ data class Message(val role: String, val content: String)
 @Serializable
 data class Reasoning(@EncodeDefault val enabled: Boolean = false)
 
+@OptIn(ExperimentalSerializationApi::class)
 @Serializable
 data class OllamaOptions(
-    @OptIn(ExperimentalSerializationApi::class)
-    @EncodeDefault(EncodeDefault.Mode.NEVER) val num_ctx: Int? = null
+    @EncodeDefault(EncodeDefault.Mode.NEVER) val num_ctx: Int? = null,
+    @EncodeDefault(EncodeDefault.Mode.NEVER) val temperature: Double? = null,
+    @EncodeDefault(EncodeDefault.Mode.NEVER) val num_predict: Int? = null
 )
 
 @OptIn(ExperimentalSerializationApi::class)

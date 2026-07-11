@@ -1,23 +1,39 @@
 package smartagent.agent.toolcalling
 
+import java.util.concurrent.ConcurrentHashMap
 import smartagent.Colors
 import smartagent.LLMGateway
-import smartagent.Message
 import smartagent.ModelConfig
+import smartagent.conversation.ChatHistory
+import smartagent.conversation.ContextWindowGuard
+import smartagent.conversation.MessageSummarizer
 import smartagent.mcp_handler.McpManager
 
 object ToolCallingAgent {
 
-    private val history = mutableListOf<Message>()
+    private val histories = ConcurrentHashMap<Long, ChatHistory>()
+    private val contextWindowGuard = ContextWindowGuard()
 
-    fun clearHistory() = history.clear()
+    fun clearHistory(chatId: Long? = null) {
+        if (chatId == null) histories.clear()
+        else histories.remove(chatId)
+    }
 
     fun handle(
         query: String,
         gateway: LLMGateway,
         model: ModelConfig,
-        chatId: Long? = null
+        chatId: Long? = null,
+        options: smartagent.OllamaOptions? = null
     ): String {
+        val chatHistory = histories.getOrPut(chatId ?: 0L) { ChatHistory() }
+
+        val toSummarize = chatHistory.messagesToSummarize()
+        if (toSummarize.isNotEmpty() && contextWindowGuard.needsCompression(chatHistory.buildContextMessages(), model.contextWindow)) {
+            val newSummary = MessageSummarizer.summarize(chatHistory.summary, toSummarize, gateway, model)
+            chatHistory.applySummary(newSummary)
+        }
+
         val connectedSessions = McpManager.allServers
             .mapNotNull { cfg -> McpManager.getSession(cfg.name)?.takeIf { it.isConnected }?.let { cfg.name to it } }
             .toMap()
@@ -28,11 +44,10 @@ object ToolCallingAgent {
             return msg
         }
 
-        val loop = ToolCallingLoop(connectedSessions, gateway, model, chatId = chatId)
-        val answer = loop.run(query, history)
+        val loop = ToolCallingLoop(connectedSessions, gateway, model, chatId = chatId, options = options)
+        val answer = loop.run(query, chatHistory.buildContextMessages())
 
-        history += Message("user", query)
-        history += Message("assistant", answer)
+        chatHistory.addExchange(query, answer)
 
         println()
         println("${Colors.LIGHT_VIOLET}$answer${Colors.RESET}")

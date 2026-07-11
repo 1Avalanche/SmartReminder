@@ -16,12 +16,12 @@ class OkHttpLLMGateway(
         .writeTimeout(60, TimeUnit.SECONDS)
         .build()
 
-    override fun chat(messages: List<Message>, model: ModelConfig, source: String): LLMGateway.Response? {
+    override fun chat(messages: List<Message>, model: ModelConfig, source: String, options: OllamaOptions?): LLMGateway.Response? {
         val apiKey = Config.apiKey(model) ?: return null
         val cleanMessages = messages.map { msg ->
             msg.copy(content = normalizer.normalize(msg.content))
         }
-        val requestBody = json.encodeToString(ChatRequest(model.apiModelId, cleanMessages))
+        val requestBody = json.encodeToString(ChatRequest(model.apiModelId, cleanMessages, options = options))
         val request = Request.Builder()
             .url(model.url)
             .addHeader("Authorization", "Bearer $apiKey")
@@ -50,6 +50,8 @@ class OkHttpLLMGateway(
             val content = chatResponse?.choices?.firstOrNull()?.message?.content?.trim()
                 ?: return@runCatching null
             LLMGateway.Response(content, chatResponse.usage)
+        }.onFailure { e ->
+            println("[LLM] Request failed: ${e::class.simpleName}: ${e.message}")
         }.getOrNull()
     }
 }

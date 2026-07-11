@@ -116,6 +116,16 @@ enum class ModelConfig(
         contextWindow = 128_000,
         aliases = listOf("gemma3", "gemma3-12b"),
         isLocal = true
+    ),
+    TG_TUNNEL(
+        shortName = "gemma-tunnel-local",
+        description = "gemma3:12b — локально через Ollama",
+        apiModelId = "gemma3:12b",
+        apiKeyProperty = "",
+        url = "http://localhost:11435/v1/chat/completions",
+        contextWindow = 128_000,
+        aliases = listOf("gemma3", "gemma3-12b"),
+        isLocal = true
     );
 
     companion object {
