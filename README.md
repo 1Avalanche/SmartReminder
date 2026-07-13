@@ -6,8 +6,9 @@
 
 | Модуль | Описание |
 |---|---|
-| `:androidApp` | Android-приложение, UI на Compose |
+| `:androidApp` | Android-приложение, UI на Compose — [README](androidApp/README.md) |
 | `:shared` | Общий Compose Multiplatform код (Android + iOS) |
+| `:llm-client` | Shared JVM-библиотека: LLM, RAG, MCP, tool-calling — [README](smartagent/llm-client/README.md) |
 | `:cli` | Консольный LLM-чат, работает независимо от мобильных модулей |
 | `:telegram` | Telegram-бот, assist-режим через MCP |
 
