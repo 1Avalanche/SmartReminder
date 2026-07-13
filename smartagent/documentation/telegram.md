@@ -8,14 +8,14 @@ Telegram-бот, который предоставляет доступ к `assi
 
 ```bash
 # Через Gradle
-TELEGRAM_BOT_TOKEN=xxx cd smartagent && ./gradlew :telegram:run
+TELEGRAM_BOT_TOKEN=xxx TELEGRAM_AUTH_KEY=yyy cd smartagent && ./gradlew :telegram:run
 
 # Через shadow JAR
 cd smartagent && ./gradlew :telegram:shadowJar
-TELEGRAM_BOT_TOKEN=xxx java -jar telegram/build/libs/smartagent-telegram.jar
+TELEGRAM_BOT_TOKEN=xxx TELEGRAM_AUTH_KEY=yyy java -jar telegram/build/libs/smartagent-telegram.jar
 ```
 
-`TELEGRAM_BOT_TOKEN` — обязательная переменная окружения. Без неё процесс падает сразу.
+Обе переменные обязательны. При первом сообщении бот запрашивает ключ авторизации (значение `TELEGRAM_AUTH_KEY`).
 
 ---
 
@@ -40,7 +40,7 @@ TelegramBotRunner
 
 ## Модель и конфигурация
 
-Жёстко задан `ModelConfig.DEEPSEEK`. Модель нельзя переключить через Telegram — нет REPL-команд.
+Жёстко задан `ModelConfig.TG_TUNNEL` (gemma3:12b через Ollama на порту 11435). Модель нельзя переключить через Telegram — нет REPL-команд.
 
 API-ключи читаются из `local.properties` по той же цепочке, что и в CLI (`./` → `../` → `~/.config/smartagent/`).
 
@@ -62,7 +62,8 @@ MCP-серверы инициализируются при запуске `Teleg
 
 | Файл | Описание |
 |------|----------|
-| `TelegramMain.kt` | Точка входа, читает `TELEGRAM_BOT_TOKEN`, запускает `TelegramBotRunner` |
-| `bot/TelegramBotRunner.kt` | Основной цикл: long-polling + маршрутизация в `ToolCallingAgent` |
+| `TelegramMain.kt` | Точка входа, читает `TELEGRAM_BOT_TOKEN` + `TELEGRAM_AUTH_KEY`, запускает `TelegramBotRunner` |
+| `bot/TelegramBotRunner.kt` | Основной цикл: long-polling + авторизация + маршрутизация в `ToolCallingAgent` |
+| `auth/AuthManager.kt` | Авторизация по ключу: `requestAuth`, `tryAuthorize`, `isAuthorized` |
 | `client/TelegramApiClient.kt` | HTTP-клиент к Telegram Bot API (`getUpdates`, `sendMessage`) |
 | `client/TelegramDtos.kt` | DTO: `TelegramUpdate`, `TelegramMessage`, `TelegramChat`, `GetUpdatesResponse`, `SendMessageRequest` |

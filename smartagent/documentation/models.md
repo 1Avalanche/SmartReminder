@@ -7,6 +7,10 @@
 | `deepseek` | `deepseek-v4-pro` | 1 000 000 | DeepSeek | `DEEPSEEK_STUDY_API_KEY` |
 | `qwen` | `qwen/qwen3.7-plus` | 1 000 000 | OpenRouter | `OPENROUTER_STUDY_API_KEY` |
 | `qwen-low` | `qwen/qwen3-8b` | 131 000 | OpenRouter | `OPENROUTER_STUDY_API_KEY` |
+| `qwen-local` | `qwen2.5:14b` | 32 000 | Ollama (localhost:11434) | — |
+| `gemma-local` | `gemma3:12b` | 128 000 | Ollama (localhost:11434) | — |
+
+Локальные модели (`isLocal = true`) требуют запущенного Ollama. API-ключ не нужен.
 
 Модель `rerank` (Nvidia Llama Nemotron) — **внутренняя**, используется только `RerankerClient` в question mode. Не подходит для чата.
 
@@ -19,6 +23,8 @@
 **`qwen`** — альтернатива если DeepSeek недоступен. Тот же контекст, через OpenRouter.
 
 **`qwen-low`** — быстрее и дешевле, контекст 131K. Подходит для коротких запросов и быстрых ответов когда скорость важнее глубины.
+
+**`qwen-local` / `gemma-local`** — работают без API-ключей. Нужен запущенный Ollama (`ollama serve`). `gemma-local` больший контекст (128K). Telegram-бот использует `gemma-tunnel-local` (порт 11435).
 
 ---
 

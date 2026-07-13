@@ -9,6 +9,7 @@
 | `:androidApp` | Android-приложение, UI на Compose |
 | `:shared` | Общий Compose Multiplatform код (Android + iOS) |
 | `:cli` | Консольный LLM-чат, работает независимо от мобильных модулей |
+| `:telegram` | Telegram-бот, assist-режим через MCP |
 
 ## CLI — установка и запуск
 
@@ -70,6 +71,8 @@ OPENROUTER_STUDY_API_KEY=sk-...
 | `deepseek` | deepseek-v4-pro (по умолчанию) |
 | `qwen` | qwen/qwen3.7-plus |
 | `qwen-low` | qwen/qwen3-8b, быстрее и дешевле |
+| `qwen-local` | qwen2.5:14b — локально через Ollama |
+| `gemma-local` | gemma3:12b — локально через Ollama |
 
 ### Режимы работы
 
@@ -110,6 +113,29 @@ smartreminder --repo ~/projects/my-app
 > /read src/main/kotlin/Database.kt
 > объясни как работает авторизация
 ```
+
+## Telegram-бот
+
+Предоставляет доступ к `assist`-режиму (ToolCallingAgent + MCP) через Telegram.
+
+### Запуск
+
+```bash
+# Через Gradle
+TELEGRAM_BOT_TOKEN=xxx TELEGRAM_AUTH_KEY=yyy cd smartagent && ./gradlew :telegram:run
+
+# Shadow JAR
+cd smartagent && ./gradlew :telegram:shadowJar
+TELEGRAM_BOT_TOKEN=xxx TELEGRAM_AUTH_KEY=yyy java -jar telegram/build/libs/smartagent-telegram.jar
+```
+
+Обе переменные окружения обязательны. Авторизация: при первом сообщении бот запрашивает ключ (значение `TELEGRAM_AUTH_KEY`).
+
+### Ограничения
+
+- Нет REPL-команд: `/model`, `/mode`, `/clear` не работают
+- История общая для всех чатов, не персистируется между рестартами
+- Только текст, нет streaming
 
 ## Мобильные приложения
 
