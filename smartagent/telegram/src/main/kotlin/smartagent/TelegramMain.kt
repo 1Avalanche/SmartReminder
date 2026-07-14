@@ -11,7 +11,7 @@ fun main() {
     val authKey = System.getenv("TELEGRAM_AUTH_KEY")
         ?: error("TELEGRAM_AUTH_KEY env var not set")
     val gateway = OkHttpLLMGateway()
-    val model = ModelConfig.TG_TUNNEL
+    val model = ModelConfig.QWEN
     val authManager = AuthManager(authKey)
     runCatching { McpManager.initServer("my-mcp") }
         .onSuccess { println("[MCP] Connected: my-mcp") }
