@@ -1,111 +1,143 @@
 # Assist Mode
 
-Agentic loop с MCP-инструментами. LLM самостоятельно выбирает инструменты, вызывает их и итерирует до получения финального ответа.
+Режим помощника по проекту. Отвечает на вопросы по проиндексированному репозиторию на основе RAG + agentic loop. Общается строго по проекту, на русском языке, в спокойном стиле.
 
 Активируется: `/mode assist` или `./smartagent/run.sh assist`
 
 ---
 
-## Как работает agentic loop
+## Подрежимы
+
+Assist mode работает в двух подрежимах:
+
+### COMMAND (по умолчанию)
+
+Состояние при входе в assist mode. Ожидает команды `/init` или `/assist-help`. Произвольный текст выводит список доступных команд:
+```
+Введите команду:
+  /init <owner>/<repo>  — инициализировать проект
+  /assist-help          — задать вопрос по проекту
+```
+
+### QUESTION
+
+Активируется командой `/assist-help`. Вопросы уходят в `AssistOrchestrator`:
+1. Из индекса загружается RAG-контекст, релевантный вопросу
+2. Запускается `ToolCallingAgent.handle()` с контекстом и системным промптом
+3. Агент отвечает строго по проекту, на русском языке
+
+Подрежим остаётся активным до явной смены — `/mode <другой>` или повторного `/mode assist`.
+
+---
+
+## Быстрый старт
 
 ```
-Пользователь вводит запрос
+/mode assist            # переключиться в assist
+/init octocat/Hello-World --branch main   # проиндексировать репозиторий
+/assist-help            # перейти в режим вопросов
+Как устроена архитектура?  # задать вопрос
+```
+
+---
+
+## Команды
+
+| Команда | Действие |
+|---------|----------|
+| `/assist-help` | В assist mode — активировать подрежим вопросов. В других режимах — показать справку |
+| `/init <owner>/<repo>` | Проиндексировать репозиторий с GitHub |
+| `/init <owner>/<repo> --branch <branch>` | Указать ветку |
+| `/init <owner>/<repo> [path1] [path2...]` | Индексировать только указанные папки |
+| `/index-info` | Статистика индекса: репозиторий, ветка, число чанков, дата |
+| `/clearIndex` | Удалить индекс (с подтверждением) |
+
+---
+
+## Как работает
+
+```
+Пользователь задаёт вопрос (подрежим QUESTION)
         │
         ▼
-ToolCallingAgent.handle()
+AssistOrchestrator.handle()
+        │
+        ├─ KnowledgeService.getContext(query)
+        │       ├─ OllamaEmbeddingGenerator.embed(query)
+        │       ├─ VectorStore.search() — топ похожих чанков
+        │       └─ DocGitContext — метаданные репозитория (ветка, список файлов)
+        │
+        ├─ ragContext + gitContext передаются в ToolCallingAgent.handle()
         │
         ▼
 ToolCallingLoop (до 5 итераций)
-        │
-        ├─ session.listTools() — получить схемы инструментов от MCP-сервера
-        ├─ Сформировать system prompt с описанием инструментов
-        ├─ gateway.chat([system, ...history, user]) → LLM-ответ
-        │
-        ├─ Парсинг ответа → ToolCallDecision:
-        │       ├─ CallTool(name, args) → McpSession.callTool() → результат в messages → следующая итерация
-        │       ├─ FinalAnswer(text)   → вернуть пользователю
-        │       └─ ParseError(raw)     → трактовать как FinalAnswer
-        │
-        └─ Если 5 итераций исчерпаны — вернуть последний ответ
+        ├─ Системный промпт + RAG-контекст + история
+        ├─ LLM-ответ → TOOL_CALL или FINAL_ANSWER
+        └─ При TOOL_CALL → MCP-инструмент → результат в messages → следующая итерация
 ```
 
-**Формат ответа LLM** (две разрешённые формы):
+**Системный промпт** (внедряется в каждый запрос):
 ```
-TOOL_CALL
-tool=<name>
-arguments={"key": "value"}
+Ты — ассистент по проекту. Отвечай только на вопросы, связанные с текущим проектом.
+Отвечай по делу, без лишних слов. Общайся на русском языке.
+Стиль общения — спокойный, без эмоций.
 ```
+
+---
+
+## Индексирование (`/init`)
+
+Команда `/init` клонирует репозиторий с GitHub через MCP и строит векторный индекс:
+
 ```
-FINAL_ANSWER
-<текст ответа>
+GitCloneDocumentSource (через MCP) → StructuredChunker → OllamaEmbeddingGenerator → FileIndexStorage
 ```
+
+**Чанкинг:**
+- Документы ≤ 1500 символов → один чанк с полным содержимым
+- Документы > 1500 символов → семантическое деление по заголовкам/объявлениям/параграфам
+
+**Индекс** сохраняется в `~/.config/smartagent/index/` и переиспользуется между сессиями.
+
+**Требует Ollama** (запущен локально) — нужен для векторизации.
 
 ---
 
 ## MCP-серверы
 
-### Встроенные серверы
+| Имя | Транспорт | Запуск | Назначение |
+|-----|-----------|--------|-----------|
+| `filesystem` | PROCESS (stdio) | автоматически при `/init` | Доступ к файловой системе |
+| `github` | HTTP | авто при наличии `GITHUB_PERSONAL_ACCESS_TOKEN` | GitHub API — клонирование при индексировании |
+| `my-mcp` | HTTP | только вручную `/mcp my-mcp init` | Кастомный сервер |
+| `tavily-mcp` | HTTP | только вручную `/mcp tavily-mcp init` | Поиск в интернете |
 
-| Имя | Транспорт | Запуск |
-|-----|-----------|--------|
-| `filesystem` | PROCESS (stdio) | `npx -y @modelcontextprotocol/server-filesystem <cwd>` |
-| `github-remote` | HTTP | `MCP_SERVER_URL` из local.properties или env |
+`github` подключается автоматически при старте CLI, если задан `GITHUB_PERSONAL_ACCESS_TOKEN`. `my-mcp` и `tavily-mcp` — только по явному запросу.
 
-`github-remote` регистрируется только если `MCP_SERVER_URL` задан.
+### Конфигурация в `local.properties`
 
-### Транспорты
+```properties
+GITHUB_PERSONAL_ACCESS_TOKEN=ghp_...       # → сервер github (авто-коннект)
 
-**ProcessTransport** — запускает подпроцесс. stdout сервера читается в фоновом потоке в `responseQueue`. Stderr дренируется после коннекта.
+MCP_SERVER_URL_MY=https://your-server/mcp  # → сервер my-mcp (ручной)
+MCP_API_KEY_MY=bearer-token                # Bearer token для my-mcp
 
-**McpHttpTransport** — каждый JSON-RPC запрос = HTTP POST. `Authorization: Bearer <MCP_API_KEY>` (если задан). Notifications (без `id`) — fire-and-forget.
-
-### Lifecycle подключения
-
+MCP_SERVER_URL_TAVILY=https://mcp.tavily.com/mcp/  # → сервер tavily-mcp (ручной)
+TAVILY_API_KEY=tvly-...                    # ключ добавляется в URL автоматически
 ```
-DISCONNECTED → CONNECTING → CONNECTED
-```
-- `connect()` — MCP handshake: `initialize` + `notifications/initialized`
-- `listTools()` → `tools/list`
-- `callTool(name, args)` → `tools/call`
-- Таймаут ответа: 15 секунд
 
 ---
 
 ## История и состояние
 
-`ToolCallingAgent` хранит `history: List<Message>` между сообщениями сессии. `/clear` сбрасывает эту историю. Состояние не персистируется между запусками.
-
----
-
-## Конфигурация
-
-В `local.properties` (корень проекта или `~/.config/smartagent/`):
-
-```properties
-MCP_SERVER_URL=https://your-server/mcp   # для github-remote
-MCP_API_KEY=secret                       # Bearer token для HTTP MCP
-```
-
----
-
-## Команды управления серверами (`/mcp`)
-
-Доступны в любом режиме.
-
-| Команда | Действие |
-|---------|----------|
-| `/mcp list` | Список серверов, статус (connected/disconnected) и транспорт |
-| `/mcp <name> init` | Подключиться к серверу |
-| `/mcp <name> tools` | Список инструментов с параметрами |
-| `/mcp <name> tool <tool> [key=value ...]` | Вызвать инструмент вручную |
-| `/mcp <name> stop` | Отключиться от сервера |
+`ToolCallingAgent` хранит `history: List<Message>` между вопросами в рамках сессии. `/clear` сбрасывает историю. Состояние не персистируется между запусками. Индекс — персистируется.
 
 ---
 
 ## Ограничения
 
-- Автоматически берётся первый подключённый сервер (нет выбора сервера)
-- Tool calls строго последовательны (нет параллельных вызовов)
-- Аргументы инструментов только `Map<String, String>` (нет вложенных объектов)
-- Нет автоматического reconnect при обрыве
+- Требует Ollama для индексирования и поиска
+- Требует настроенного MCP-сервера `github` для `/init`
+- Tool calls строго последовательны
+- Нет автоматического переиндексирования при изменениях в репозитории
 - Нет streaming LLM-ответов

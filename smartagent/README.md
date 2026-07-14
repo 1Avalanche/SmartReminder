@@ -52,7 +52,7 @@ OPENROUTER_STUDY_API_KEY=sk-...
 | `question` | RAG-поиск по индексу + LLM (по умолчанию) |
 | `chat` | Прямой диалог с LLM |
 | `code-analyzer` | Chat с промптом для ревью кода |
-| `assist` | Agentic loop с MCP-инструментами |
+| `assist` | RAG doc Q&A по проиндексированному репозиторию + agentic loop |
 | `index` | Индексирование файлов для RAG |
 | `architect` | Многоагентный менеджмент задач |
 

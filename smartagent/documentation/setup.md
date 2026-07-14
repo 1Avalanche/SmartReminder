@@ -65,16 +65,27 @@ Embedding unavailable: Connection refused
 
 ---
 
-## MCP-сервер (для assist режима с HTTP)
+## MCP-серверы (для assist режима)
 
-Нужен только если используется `github-remote` MCP-сервер.
+Три HTTP MCP-сервера настраиваются через `local.properties`. Все опциональны.
+
+| Сервер | Переменные | Запуск |
+|--------|-----------|--------|
+| `github` | `GITHUB_PERSONAL_ACCESS_TOKEN` | авто при старте CLI |
+| `my-mcp` | `MCP_SERVER_URL_MY`, `MCP_API_KEY_MY` | вручную `/mcp my-mcp init` |
+| `tavily-mcp` | `MCP_SERVER_URL_TAVILY`, `TAVILY_API_KEY` | вручную `/mcp tavily-mcp init` |
 
 ```properties
-MCP_SERVER_URL=https://your-mcp-server.example.com/mcp
-MCP_API_KEY=your-bearer-token
+GITHUB_PERSONAL_ACCESS_TOKEN=ghp_...
+
+MCP_SERVER_URL_MY=https://your-server.example.com/mcp
+MCP_API_KEY_MY=your-bearer-token
+
+MCP_SERVER_URL_TAVILY=https://mcp.tavily.com/mcp/
+TAVILY_API_KEY=tvly-...
 ```
 
-`MCP_SERVER_URL` и `MCP_API_KEY` добавляются в тот же `local.properties`. `github-remote` сервер регистрируется только если `MCP_SERVER_URL` задан.
+`github` требуется для `/init` в assist mode (клонирование репозитория). Сервер регистрируется и подключается автоматически при наличии токена.
 
 ---
 
@@ -85,7 +96,7 @@ MCP_API_KEY=your-bearer-token
 | `question` | опционально | опционально | ✓ | — |
 | `chat` | или/или | или/или | — | — |
 | `code-analyzer` | или/или | или/или | — | — |
-| `assist` | или/или | или/или | — | опционально |
+| `assist` | или/или | или/или | ✓ (для `/init`) | опционально |
 | `index` | — | — | ✓ | — |
 | `architect` | или/или | или/или | — | — |
 
