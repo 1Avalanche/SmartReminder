@@ -10,9 +10,9 @@ jobs:
     steps:
       - name: Send Telegram message
         run: |
-          curl -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
+          curl -X POST "https://${{secrets.VPS_IP}}:8080/api/message" \
             -H "Content-Type: application/json" \
+            -H "X-Api-Key: AGENT_API_KEY" \
             -d '{
-              "chat_id": "${{ secrets.TELEGRAM_CHAT_ID }}",
-              "text": "🚀 Hello from GitHub Actions!"
+              "text": "что делает этот репозиторий?"
             }'
