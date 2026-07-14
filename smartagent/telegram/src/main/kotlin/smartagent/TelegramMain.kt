@@ -9,7 +9,7 @@ import smartagent.doc.JsonMetadataStorage
 import smartagent.doc.ProjectKnowledgeService
 import smartagent.doc.RagSearcher
 import smartagent.mcp_handler.McpManager
-import smartagent.telegram.auth.AuthManager
+import smartagent.telegram.api.HttpApiServer
 import smartagent.telegram.bot.TelegramBotRunner
 import smartagent.tools.ToolRegistry
 import smartagent.tools.index.IndexInitTool
@@ -18,8 +18,6 @@ import smartagent.tools.rag.RagSearchTool
 fun main() {
     val token = System.getenv("TELEGRAM_BOT_TOKEN")
         ?: error("TELEGRAM_BOT_TOKEN env var not set")
-    val authKey = System.getenv("TELEGRAM_AUTH_KEY")
-        ?: error("TELEGRAM_AUTH_KEY env var not set")
     val gateway = OkHttpLLMGateway()
     val model = ModelConfig.QWEN
 
@@ -44,8 +42,12 @@ fun main() {
     ToolRegistry.register(IndexInitTool(projectKnowledgeService))
     val assistOrchestrator = AssistOrchestrator(projectKnowledgeService, gateway)
 
-    val authManager = AuthManager(authKey)
+    val httpPort = System.getenv("HTTP_PORT")?.toIntOrNull() ?: 8080
+    val httpApiKey = System.getenv("HTTP_API_KEY")
+        ?: error("HTTP_API_KEY env var not set")
+    HttpApiServer(assistOrchestrator, model, httpApiKey, httpPort).start()
+
     runBlocking {
-        TelegramBotRunner(token, gateway, model, authManager, assistOrchestrator, projectKnowledgeService).start(this)
+        TelegramBotRunner(token, gateway, model, assistOrchestrator, projectKnowledgeService).start(this)
     }
 }

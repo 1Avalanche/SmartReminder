@@ -10,7 +10,6 @@ import smartagent.ModelConfig
 import smartagent.agent.assist.AssistOrchestrator
 import smartagent.doc.KnowledgeService
 import smartagent.mcp_handler.McpManager
-import smartagent.telegram.auth.AuthManager
 import smartagent.telegram.client.TelegramApiClient
 import smartagent.tools.ToolRegistry
 import smartagent.tools.github.GitHubGetDiffTool
@@ -23,7 +22,6 @@ class TelegramBotRunner(
     token: String,
     private val gateway: LLMGateway,
     private val model: ModelConfig,
-    private val authManager: AuthManager,
     private val assistOrchestrator: AssistOrchestrator,
     private val knowledgeService: KnowledgeService
 ) {
@@ -53,21 +51,6 @@ class TelegramBotRunner(
                     offset = update.updateId + 1
                     val text = update.message?.text ?: continue
                     val chatId = update.message.chat.id
-
-                    if (!authManager.isAuthorized(chatId) && !authManager.isPendingAuth(chatId)) {
-                        authManager.requestAuth(chatId)
-                        client.sendMessage(chatId, "Введи ключ авторизации:")
-                        continue
-                    }
-
-                    if (authManager.isPendingAuth(chatId)) {
-                        if (authManager.tryAuthorize(chatId, text)) {
-                            client.sendMessage(chatId, "Авторизация успешна!")
-                        } else {
-                            client.sendMessage(chatId, "Неверный ключ. Доступ запрещён.")
-                        }
-                        continue
-                    }
 
                     val count = pendingCount.getAndIncrement()
                     requestChannel.send(chatId to text)
