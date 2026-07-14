@@ -28,7 +28,7 @@ class IndexCommandHandler {
             "structured" -> StructuredChunker()
             else -> FixedChunker(DEFAULT_CHUNK_SIZE)
         }
-        val generator: EmbeddingGenerator = OllamaEmbeddingGenerator()
+        val generator: EmbeddingGenerator = OpenRouterEmbeddingGenerator()
         val store = InMemoryVectorStore()
 
         print("Loading documents...")

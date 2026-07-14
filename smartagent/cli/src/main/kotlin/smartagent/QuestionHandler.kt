@@ -62,7 +62,7 @@ internal class QuestionHandler(
     }
 
     private fun retrieveChunks(query: String, useRerank: Boolean): List<RankedChunk> {
-        val generator = OllamaEmbeddingGenerator()
+        val generator = OpenRouterEmbeddingGenerator()
         val embedding = try {
             generator.embed(query)
         } catch (e: Exception) {

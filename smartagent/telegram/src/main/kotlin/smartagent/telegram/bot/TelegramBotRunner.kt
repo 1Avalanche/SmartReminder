@@ -7,32 +7,38 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.launch
 import smartagent.LLMGateway
 import smartagent.ModelConfig
-import smartagent.OllamaOptions
-import smartagent.agent.toolcalling.ToolCallingAgent
+import smartagent.agent.assist.AssistOrchestrator
+import smartagent.doc.KnowledgeService
+import smartagent.mcp_handler.McpManager
 import smartagent.telegram.auth.AuthManager
 import smartagent.telegram.client.TelegramApiClient
+import smartagent.tools.ToolRegistry
+import smartagent.tools.github.GitHubGetDiffTool
+import smartagent.tools.github.GitHubGetFileContentsTool
+import smartagent.tools.github.GitHubListBranchesTool
+import smartagent.tools.github.GitHubListCommitsTool
+import smartagent.tools.github.GitHubSearchCodeTool
 
 class TelegramBotRunner(
     token: String,
     private val gateway: LLMGateway,
     private val model: ModelConfig,
-    private val authManager: AuthManager
+    private val authManager: AuthManager,
+    private val assistOrchestrator: AssistOrchestrator,
+    private val knowledgeService: KnowledgeService
 ) {
     private val client = TelegramApiClient(token)
     private val requestChannel = Channel<Pair<Long, String>>(Channel.UNLIMITED)
     private val pendingCount = AtomicInteger(0)
-    private val ollamaOptions = OllamaOptions(num_ctx = 8192, temperature = 0.2, num_predict = 512)
 
     fun start(scope: CoroutineScope) {
         scope.launch(Dispatchers.IO) {
             for ((chatId, text) in requestChannel) {
-                val answer = ToolCallingAgent.handle(
-                    query = text,
-                    gateway = gateway,
-                    model = model,
-                    chatId = chatId,
-                    options = ollamaOptions
-                )
+                val answer = if (text.startsWith("/init ") || text == "/init") {
+                    handleInitCommand(text)
+                } else {
+                    assistOrchestrator.handle(query = text, model = model, chatId = chatId)
+                }
                 client.sendMessage(chatId, answer)
                 pendingCount.decrementAndGet()
             }
@@ -71,5 +77,32 @@ class TelegramBotRunner(
                 }
             }
         }
+    }
+
+    private fun handleInitCommand(text: String): String {
+        if (text == "/init") return "Использование: /init <owner>/<repo> [--branch <ветка>] [путь1] [путь2...]"
+
+        val args = text.removePrefix("/init ").trim().split("\\s+".toRegex())
+        val ownerRepo = args.firstOrNull() ?: return "Использование: /init <owner>/<repo>"
+        val parts = ownerRepo.split("/")
+        if (parts.size != 2) return "Формат: <owner>/<repo>"
+        val (owner, repo) = parts
+
+        val branchIdx = args.indexOf("--branch")
+        val branch = if (branchIdx >= 0) args.getOrElse(branchIdx + 1) { "main" } else "main"
+        val paths = args.drop(1).filter { it != "--branch" && it != branch }.ifEmpty { listOf(".") }
+
+        val session = McpManager.getSession("github")
+            ?: return "GitHub MCP не подключён. Добавь GITHUB_PERSONAL_ACCESS_TOKEN и перезапусти бота."
+        ToolRegistry.register(GitHubGetFileContentsTool(session))
+        ToolRegistry.register(GitHubSearchCodeTool(session))
+        ToolRegistry.register(GitHubListCommitsTool(session))
+        ToolRegistry.register(GitHubGetDiffTool(session))
+        ToolRegistry.register(GitHubListBranchesTool(session))
+
+        return runCatching {
+            knowledgeService.init(owner, repo, branch, paths)
+            "Индекс инициализирован: $owner/$repo@$branch"
+        }.getOrElse { e -> "Ошибка индексации: ${e.message ?: e::class.simpleName}" }
     }
 }

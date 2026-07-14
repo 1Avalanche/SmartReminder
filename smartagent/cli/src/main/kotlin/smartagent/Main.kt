@@ -64,11 +64,11 @@ fun main(args: Array<String>) {
     val indexStorage = FileIndexStorage(JsonVectorIndexPersistence(), "$indexDir/fixed.json")
     val metadataStorage = JsonMetadataStorage("$indexDir/metadata.json")
     val indexBuilder = IndexBuilder(
-        embeddingGenerator = OllamaEmbeddingGenerator(),
+        embeddingGenerator = OpenRouterEmbeddingGenerator(),
         indexStorage = indexStorage,
         metadataStorage = metadataStorage
     )
-    val ragSearcher = RagSearcher(OllamaEmbeddingGenerator(), indexStorage)
+    val ragSearcher = RagSearcher(OpenRouterEmbeddingGenerator(), indexStorage)
     val projectKnowledgeService = ProjectKnowledgeService(
         indexBuilder = indexBuilder,
         ragSearcher = ragSearcher,
@@ -327,7 +327,7 @@ private fun runRepl(
                 when (session.currentMode) {
                     AgentMode.ARCHITECT -> architectOrchestrator.process(input)
                     AgentMode.ASSIST    -> when (assistSubMode) {
-                        AssistSubMode.QUESTION -> assistOrchestrator.handle(input, session.currentModel)
+                        AssistSubMode.QUESTION -> assistOrchestrator.handle(input, ModelConfig.QWEN)
                         AssistSubMode.COMMAND  -> println("${Colors.LIGHT_YELLOW}Введите доступную команду:\n  /init <owner>/<repo>  — инициализировать проект\n  /assist-help          — задать вопрос по проекту${Colors.RESET}")
                     }
                     AgentMode.INDEX     -> println("${Colors.DARK_GRAY}Use /index-run to start. See /index-status for current settings.${Colors.RESET}")
