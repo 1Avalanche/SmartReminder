@@ -48,30 +48,23 @@ object McpManager {
      * A single server failure does not block others.
      */
     fun initRemoteServers() {
-        val remoteServers = builtinServers.filter { it.transportMode == TransportMode.HTTP }
+        val remoteServers = builtinServers.filter { it.transportMode == TransportMode.HTTP && it.autoConnect }
         if (remoteServers.isEmpty()) {
             println("${Colors.DARK_GRAY}[MCP] No remote servers configured.${Colors.RESET}")
             return
         }
-        val totalTools = java.util.concurrent.atomic.AtomicInteger(0)
         val threads = remoteServers.map { cfg ->
             Thread {
-                println("${Colors.DARK_GRAY}[MCP] Connecting to remote server: ${cfg.name} (${cfg.httpUrl})${Colors.RESET}")
                 try {
                     val session = initServer(cfg.name)
                     val tools = session.listTools()
                     println("${Colors.LIGHT_GREEN}[MCP] Connected: ${cfg.name} — ${tools.size} tool(s) discovered${Colors.RESET}")
-                    tools.forEach { tool ->
-                        println("${Colors.DARK_GRAY}[MCP]   ${tool.name} → ${cfg.name}${Colors.RESET}")
-                    }
-                    totalTools.addAndGet(tools.size)
                 } catch (e: Exception) {
                     println("${Colors.LIGHT_YELLOW}[MCP] Failed to connect to ${cfg.name}: ${e.message}${Colors.RESET}")
                 }
             }.also { it.isDaemon = true; it.start() }
         }
         threads.forEach { it.join() }
-        println("${Colors.DARK_GRAY}[MCP] Total tools discovered: ${totalTools.get()}${Colors.RESET}")
     }
 
     /** Register a custom server that is not in the built-in list. */
@@ -97,7 +90,8 @@ object McpManager {
                 name = entry.name,
                 transportMode = TransportMode.HTTP,
                 httpUrl = entry.url,
-                apiKey = entry.apiKey
+                apiKey = entry.apiKey,
+                autoConnect = entry.autoConnect
             ))
         }
     }

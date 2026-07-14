@@ -24,7 +24,7 @@ class McpRemoteConfigTest {
             env = emptyMap()
         )
         assertEquals(1, result.size)
-        assertEquals(RemoteServerEntry(name = "my-mcp", url = "https://my.example.com/mcp", apiKey = "key-my"), result[0])
+        assertEquals(RemoteServerEntry(name = "my-mcp", url = "https://my.example.com/mcp", apiKey = "key-my", autoConnect = false), result[0])
     }
 
     @Test
@@ -52,7 +52,7 @@ class McpRemoteConfigTest {
             props = emptyMap(),
             env = mapOf("MCP_SERVER_URL_MY" to "https://env.example.com/mcp", "MCP_API_KEY_MY" to "env-key")
         )
-        assertEquals(RemoteServerEntry(name = "my-mcp", url = "https://env.example.com/mcp", apiKey = "env-key"), result[0])
+        assertEquals(RemoteServerEntry(name = "my-mcp", url = "https://env.example.com/mcp", apiKey = "env-key", autoConnect = false), result[0])
     }
 
     @Test
@@ -175,5 +175,25 @@ class McpRemoteConfigTest {
         val url = "https://example.com/mcp/?key=existing"
         val result = McpRemoteConfig.appendQueryKey(url, "key", "new")
         assertEquals(url, result)
+    }
+
+    // ─── autoConnect ──────────────────────────────────────────────────────────
+
+    @Test
+    fun `my-mcp has autoConnect false`() {
+        val result = McpRemoteConfig.load(
+            props = mapOf("MCP_SERVER_URL_MY" to "https://my.example.com/mcp"),
+            env = emptyMap()
+        )
+        assertEquals(false, result[0].autoConnect)
+    }
+
+    @Test
+    fun `tavily-mcp has autoConnect false`() {
+        val result = McpRemoteConfig.load(
+            props = mapOf("MCP_SERVER_URL_TAVILY" to "https://mcp.tavily.com/mcp/"),
+            env = emptyMap()
+        )
+        assertEquals(false, result[0].autoConnect)
     }
 }

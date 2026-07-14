@@ -5,7 +5,8 @@ class StructuredChunker(
     private val maxChunkSize: Int = 1500,
     private val minChunkSize: Int = 200,
     private val overlapSize: Int = 100,
-    private val preserveDeclarations: Boolean = true
+    private val preserveDeclarations: Boolean = true,
+    private val singleChunkThreshold: Int = maxChunkSize
 ) : Chunker {
 
     private val headerRegex = Regex("^(#{1,6})\\s+(.+)")
@@ -28,6 +29,23 @@ class StructuredChunker(
     private fun chunkDocument(document: Document): List<Chunk> {
         val ext = document.metadata.extension
         val cleanContent = normalizer.normalize(document.content)
+
+        if (singleChunkThreshold > 0 && cleanContent.length <= singleChunkThreshold) {
+            return listOf(Chunk(
+                id = "${document.id}_0",
+                content = cleanContent,
+                documentId = document.id,
+                chunkIndex = 0,
+                metadata = ChunkMetadata(
+                    documentTitle = document.title,
+                    documentSource = document.metadata.source,
+                    extension = document.metadata.extension,
+                    sectionPath = emptyList(),
+                    chunkIndex = 0
+                )
+            ))
+        }
+
         val isCode = ext in codeExtensions
         val sections = when {
             ext in markdownExtensions -> extractMarkdownSections(cleanContent)

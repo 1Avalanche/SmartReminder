@@ -7,6 +7,7 @@ import smartagent.ModelConfig
 import smartagent.conversation.ChatHistory
 import smartagent.conversation.ContextWindowGuard
 import smartagent.conversation.MessageSummarizer
+import smartagent.doc.DocGitContext
 import smartagent.mcp_handler.McpManager
 
 object ToolCallingAgent {
@@ -24,7 +25,11 @@ object ToolCallingAgent {
         gateway: LLMGateway,
         model: ModelConfig,
         chatId: Long? = null,
-        options: smartagent.OllamaOptions? = null
+        options: smartagent.OllamaOptions? = null,
+        ragContext: String? = null,
+        gitContext: DocGitContext? = null,
+        systemErrors: List<String> = emptyList(),
+        extraSystemPrompt: String? = null
     ): String {
         val chatHistory = histories.getOrPut(chatId ?: 0L) { ChatHistory() }
 
@@ -44,14 +49,16 @@ object ToolCallingAgent {
             return msg
         }
 
-        val loop = ToolCallingLoop(connectedSessions, gateway, model, chatId = chatId, options = options)
+        val loop = ToolCallingLoop(
+            connectedSessions, gateway, model,
+            chatId = chatId, options = options,
+            ragContext = ragContext, gitContext = gitContext,
+            systemErrors = systemErrors,
+            extraSystemPrompt = extraSystemPrompt
+        )
         val answer = loop.run(query, chatHistory.buildContextMessages())
 
         chatHistory.addExchange(query, answer)
-
-        println()
-        println("${Colors.LIGHT_VIOLET}$answer${Colors.RESET}")
-        println()
 
         return answer
     }

@@ -8,7 +8,7 @@ import java.io.OutputStreamWriter
 import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.TimeUnit
 
-class ProcessTransport(command: List<String>, workDir: String) : McpTransport {
+class ProcessTransport(command: List<String>, workDir: String, env: Map<String, String> = emptyMap()) : McpTransport {
     private val process: Process
     private val writer: BufferedWriter
     private val responseQueue = LinkedBlockingQueue<String>()
@@ -17,6 +17,7 @@ class ProcessTransport(command: List<String>, workDir: String) : McpTransport {
     init {
         process = ProcessBuilder(command)
             .directory(File(workDir))
+            .also { pb -> if (env.isNotEmpty()) pb.environment().putAll(env) }
             .start()
 
         writer = BufferedWriter(OutputStreamWriter(process.outputStream, Charsets.UTF_8))

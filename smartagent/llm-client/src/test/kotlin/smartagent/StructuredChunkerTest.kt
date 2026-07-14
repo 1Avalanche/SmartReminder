@@ -6,7 +6,7 @@ import kotlin.test.assertTrue
 
 class StructuredChunkerTest {
 
-    private val chunker = StructuredChunker()
+    private val chunker = StructuredChunker(singleChunkThreshold = 0)
 
     private fun doc(content: String) = Document(
         id = "doc.md",
@@ -127,9 +127,26 @@ class StructuredChunkerTest {
         assertEquals(1, chunks[1].metadata.chunkIndex)
     }
 
+    @Test
+    fun `short document produces single chunk with full content`() {
+        val content = "# Header\nShort content."
+        val c = StructuredChunker()
+        val chunks = c.chunk(listOf(doc(content)))
+        assertEquals(1, chunks.size)
+        assertEquals(content, chunks[0].content)
+    }
+
+    @Test
+    fun `document exactly at maxChunkSize produces single chunk`() {
+        val content = "a".repeat(1500)
+        val c = StructuredChunker()
+        val chunks = c.chunk(listOf(doc(content)))
+        assertEquals(1, chunks.size)
+    }
+
     // --- code mode ---
 
-    private val codeChunker = StructuredChunker(minChunkSize = 1, overlapSize = 0)
+    private val codeChunker = StructuredChunker(singleChunkThreshold = 0, minChunkSize = 1, overlapSize = 0)
 
     private fun codeDoc(content: String, ext: String = "kt") = Document(
         id = "Main.$ext",

@@ -3,7 +3,7 @@ package smartagent
 class SessionConfig {
     var currentModel: ModelConfig = ModelConfig.DEEPSEEK
         private set
-    var currentMode: AgentMode = AgentMode.CHAT
+    var currentMode: AgentMode = AgentMode.ASSIST
         internal set
     var repoContext: RepoContext? = null
 

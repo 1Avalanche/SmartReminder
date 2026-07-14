@@ -28,7 +28,7 @@ class McpSession(
 
         val t: McpTransport = when (config.transportMode) {
             TransportMode.PROCESS -> {
-                val pt = ProcessTransport(config.command, config.workDir)
+                val pt = ProcessTransport(config.command, config.workDir, config.env)
                 Thread.sleep(1_000)   // give npx time to start before we write to stdin
                 pt
             }

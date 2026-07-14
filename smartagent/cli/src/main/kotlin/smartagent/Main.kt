@@ -12,9 +12,19 @@ import smartagent.architect.Stage
 import smartagent.architect.TaskRepository
 import smartagent.architect.TaskStatus
 import smartagent.architect.ValidationAgent
+import smartagent.agent.assist.AssistOrchestrator
 import smartagent.agent.toolcalling.ToolCallingAgent
+import smartagent.doc.FileIndexStorage
+import smartagent.doc.GitCloneDocumentSource
+import smartagent.doc.IndexBuilder
+import smartagent.doc.JsonMetadataStorage
+import smartagent.doc.ProjectKnowledgeService
+import smartagent.doc.RagSearcher
 import smartagent.mcp_handler.AssistRepl
 import smartagent.mcp_handler.McpManager
+import smartagent.tools.ToolRegistry
+import smartagent.tools.index.IndexInitTool
+import smartagent.tools.rag.RagSearchTool
 import java.io.File
 
 fun main(args: Array<String>) {
@@ -33,7 +43,7 @@ fun main(args: Array<String>) {
         }
     }
 
-    val targetMode = parsedArgs.initialMode ?: AgentMode.CHAT
+    val targetMode = parsedArgs.initialMode ?: session.currentMode
     if (session.currentMode != targetMode) session.switchMode(targetMode)
 
     val client = ChatClient(session)
@@ -50,6 +60,28 @@ fun main(args: Array<String>) {
 
     McpManager.initRemoteServers()
 
+    val indexDir = "${System.getProperty("user.home")}/.config/smartagent/index"
+    val indexStorage = FileIndexStorage(JsonVectorIndexPersistence(), "$indexDir/fixed.json")
+    val metadataStorage = JsonMetadataStorage("$indexDir/metadata.json")
+    val indexBuilder = IndexBuilder(
+        embeddingGenerator = OllamaEmbeddingGenerator(),
+        indexStorage = indexStorage,
+        metadataStorage = metadataStorage
+    )
+    val ragSearcher = RagSearcher(OllamaEmbeddingGenerator(), indexStorage)
+    val projectKnowledgeService = ProjectKnowledgeService(
+        indexBuilder = indexBuilder,
+        ragSearcher = ragSearcher,
+        metadataStorage = metadataStorage,
+        sourceFactory = { owner, repo, branch, paths ->
+            GitCloneDocumentSource(owner, repo, branch, paths)
+        }
+    )
+    ToolRegistry.register(RagSearchTool(projectKnowledgeService))
+    ToolRegistry.register(IndexInitTool(projectKnowledgeService))
+
+    val assistOrchestrator = AssistOrchestrator(projectKnowledgeService, gateway)
+
     when (session.currentMode) {
         AgentMode.ARCHITECT -> {
             println("${Colors.DARK_GRAY}Model: ${session.currentModel.shortName} | Mode: ${session.currentMode.displayName}")
@@ -58,7 +90,7 @@ fun main(args: Array<String>) {
         }
         AgentMode.ASSIST -> {
             println("${Colors.LIGHT_YELLOW}SmartAgent — Assist mode${Colors.RESET}")
-            println("${Colors.DARK_GRAY}Type '/mcp list' to see servers, /help for all commands, /exit to quit.${Colors.RESET}\n")
+            println("${Colors.DARK_GRAY}Команды: /init, /assist-help. /help — все команды.${Colors.RESET}\n")
         }
         AgentMode.QUESTION -> {
             println("${Colors.LIGHT_YELLOW}SmartAgent — Question mode${Colors.RESET}")
@@ -72,7 +104,7 @@ fun main(args: Array<String>) {
         }
     }
 
-    runRepl(session, client, architectOnboarding, architectOrchestrator, featureRepository, taskRepository, intentClassifier, invariantAgent, gateway)
+    runRepl(session, client, architectOnboarding, architectOrchestrator, featureRepository, taskRepository, intentClassifier, invariantAgent, gateway, assistOrchestrator, projectKnowledgeService)
 }
 
 private data class ParsedArgs(
@@ -106,17 +138,21 @@ private fun runRepl(
     taskRepository: TaskRepository,
     intentClassifier: IntentClassifier,
     invariantAgent: InvariantAgent,
-    gateway: LLMGateway
+    gateway: LLMGateway,
+    assistOrchestrator: AssistOrchestrator,
+    projectKnowledgeService: ProjectKnowledgeService
 ) {
     var indexPath: String? = null
     var indexStrategy = "fixed"
     var ragMode = RagMode.RERANK
     var chatSetting = ChatSetting.NO
+    var assistSubMode = AssistSubMode.COMMAND
     val rerankerClient = run {
             val key = Config.apiKey(ModelConfig.RERANK)
             if (key != null) RerankerClient(key) else null
         }
     val questionHandler = QuestionHandler(session, client, rerankerClient)
+    val docInitHandler = DocInitCommandHandler(projectKnowledgeService, ToolRegistry)
 
     while (true) {
         print("${Colors.BRIGHT_WHITE}> ")
@@ -171,7 +207,7 @@ private fun runRepl(
                 ToolCallingAgent.clearHistory()
                 when (session.currentMode) {
                     AgentMode.ARCHITECT -> architectOnboarding.startSession(featureRepository.getActiveFeature() != null)
-                    AgentMode.ASSIST -> println("${Colors.DARK_GRAY}Assist mode. Type '/mcp list' to start.${Colors.RESET}")
+                    AgentMode.ASSIST -> { assistSubMode = AssistSubMode.COMMAND }
                     AgentMode.INDEX -> println("${Colors.DARK_GRAY}Index mode. Set /index-path, /index-strategy, /index-output, then /index-run.${Colors.RESET}")
                     AgentMode.QUESTION -> println("${Colors.DARK_GRAY}Question mode. Use /rag-mode no|simple|rerank, then type your question.${Colors.RESET}")
                     else -> {}
@@ -258,13 +294,42 @@ private fun runRepl(
             }
             input == "/scenario off" -> println("${Colors.DARK_GRAY}Scenario runs and completes automatically. No active scenario to stop.${Colors.RESET}")
             input == "/scenario" -> println("${Colors.LIGHT_YELLOW}Usage: /scenario on | /scenario off${Colors.RESET}")
+            // Doc index commands
+            input.startsWith("/init ") -> {
+                val args = input.removePrefix("/init ").trim().split("\\s+".toRegex())
+                docInitHandler.handle(args)
+            }
+            input == "/init" -> println("${Colors.LIGHT_YELLOW}Usage: /init <owner>/<repo> [--branch <branch>] [path1] [path2...]${Colors.RESET}")
+            input == "/assist-help" -> {
+                if (session.currentMode == AgentMode.ASSIST) {
+                    assistSubMode = AssistSubMode.QUESTION
+                    println("${Colors.DARK_GRAY}Задайте свой вопрос по проекту${Colors.RESET}")
+                } else {
+                    showAssistHelp()
+                }
+            }
+            input == "/index-info" -> showDocIndexInfo(projectKnowledgeService)
+            input == "/clearIndex" -> {
+                print("${Colors.LIGHT_YELLOW}Удалить индекс? Данные RAG будут утеряны. [y/N]: ${Colors.RESET}")
+                System.out.flush()
+                val confirm = readlnOrNull()?.trim()?.lowercase()
+                if (confirm == "y" || confirm == "yes") {
+                    projectKnowledgeService.clear()
+                    println("${Colors.LIGHT_YELLOW}Индекс удалён.${Colors.RESET}")
+                } else {
+                    println("${Colors.DARK_GRAY}Отменено.${Colors.RESET}")
+                }
+            }
             // MCP commands — available in any mode
             input == "/mcp" || input.startsWith("/mcp ") -> AssistRepl.handle(input.removePrefix("/"))
             input.startsWith("/") -> println("${Colors.LIGHT_YELLOW}Unknown command: $input${Colors.RESET}")
             else -> {
                 when (session.currentMode) {
                     AgentMode.ARCHITECT -> architectOrchestrator.process(input)
-                    AgentMode.ASSIST    -> ToolCallingAgent.handle(input, gateway, session.currentModel)
+                    AgentMode.ASSIST    -> when (assistSubMode) {
+                        AssistSubMode.QUESTION -> assistOrchestrator.handle(input, session.currentModel)
+                        AssistSubMode.COMMAND  -> println("${Colors.LIGHT_YELLOW}Введите доступную команду:\n  /init <owner>/<repo>  — инициализировать проект\n  /assist-help          — задать вопрос по проекту${Colors.RESET}")
+                    }
                     AgentMode.INDEX     -> println("${Colors.DARK_GRAY}Use /index-run to start. See /index-status for current settings.${Colors.RESET}")
                     AgentMode.QUESTION  -> questionHandler.handle(input, ragMode)
                     else                -> client.sendMessage(input)
@@ -330,6 +395,12 @@ Scenario commands (chat mode only):
   /scenario on                    Run questions from temp/scenario.json automatically
   /scenario off                   (no-op — scenario completes on its own)
 
+Doc index commands (assist mode):
+  /assist-help                    Show assist mode commands
+  /init <owner>/<repo> [--branch <branch>] [path1...]
+                                  Init doc index from GitHub via MCP
+  /index-info                     Show current doc index stats
+
 MCP commands (any mode):
   /mcp list                       List registered MCP servers and status
   /mcp <name> init                Start and connect to a server
@@ -340,6 +411,20 @@ Other:
   /status                         Show what's happening right now
   /classify <message>             Diagnose intent without changing state
   <message>                       Send a message (architect mode: guided dialog)
+    """.trimIndent() + Colors.RESET)
+}
+
+private enum class AssistSubMode { COMMAND, QUESTION }
+
+private fun showAssistHelp() {
+    println(Colors.LIGHT_YELLOW + """
+Режим помощника по проекту (/mode assist).
+
+Команды:
+  /init <owner>/<repo>                         — инициализировать индекс репозитория
+  /init <owner>/<repo> --branch <branch>       — указать ветку
+  /init <owner>/<repo> [path1] [path2...]      — индексировать отдельные папки
+  /assist-help                                 — перейти в режим вопросов по проекту
     """.trimIndent() + Colors.RESET)
 }
 
@@ -471,6 +556,22 @@ private fun analyzeCode(session: ChatSession, client: ChatClient, rawPath: Strin
     }
 
     client.sendMessage(sb.toString().trimEnd())
+}
+
+private fun showDocIndexInfo(service: ProjectKnowledgeService) {
+    val stats = service.getStats()
+    if (stats == null) {
+        println("${Colors.LIGHT_YELLOW}No index. Run: /init <owner>/<repo>${Colors.RESET}")
+        return
+    }
+    val stale = service.isStale()
+    val age = (System.currentTimeMillis() - stats.indexedAt) / 3_600_000
+    println("${Colors.LIGHT_YELLOW}Doc index:${Colors.RESET}")
+    println("${Colors.LIGHT_GRAY}  repo    : ${stats.owner}/${stats.repo}${Colors.RESET}")
+    println("${Colors.LIGHT_GRAY}  branch  : ${stats.currentBranch}${Colors.RESET}")
+    println("${Colors.LIGHT_GRAY}  docs    : ${stats.docCount}${Colors.RESET}")
+    println("${Colors.LIGHT_GRAY}  chunks  : ${stats.chunkCount}${Colors.RESET}")
+    println("${Colors.LIGHT_GRAY}  age     : ${age}h ${if (stale) "(STALE)" else "(fresh)"}${Colors.RESET}")
 }
 
 private fun showIndexStatus(path: String?, strategy: String) {

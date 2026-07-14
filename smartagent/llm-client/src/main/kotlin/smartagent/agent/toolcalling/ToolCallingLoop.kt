@@ -9,6 +9,7 @@ import smartagent.LLMGateway
 import smartagent.Message
 import smartagent.ModelConfig
 import smartagent.Spinner
+import smartagent.doc.DocGitContext
 import smartagent.mcp_handler.McpSession
 import smartagent.mcp_handler.McpTool
 import smartagent.mcp_handler.renderToolResult
@@ -19,7 +20,11 @@ class ToolCallingLoop(
     private val model: ModelConfig,
     private val maxIterations: Int = 4,
     private val chatId: Long? = null,
-    private val options: smartagent.OllamaOptions? = null
+    private val options: smartagent.OllamaOptions? = null,
+    private val ragContext: String? = null,
+    private val gitContext: DocGitContext? = null,
+    private val systemErrors: List<String> = emptyList(),
+    private val extraSystemPrompt: String? = null
 ) {
     fun run(userQuery: String, priorHistory: List<Message> = emptyList()): String {
         val sessionTools: List<Pair<McpSession, McpTool>> = sessions.values
@@ -27,10 +32,6 @@ class ToolCallingLoop(
         val allTools: List<McpTool> = sessionTools.map { it.second }
         val toolOwner: Map<String, McpSession> = sessionTools.associate { (session, tool) -> tool.name to session }
         val toolByName: Map<String, McpTool> = allTools.associateBy { it.name }
-
-        sessionTools.groupBy { it.first.name }.forEach { (serverName, pairs) ->
-            println("[ToolLoop] server=$serverName tools=${pairs.map { it.second.name }}")
-        }
 
         val failureEngine = ToolFailureEngine(toolByName.keys.toSet())
         var parseErrorCount = 0
@@ -42,23 +43,17 @@ class ToolCallingLoop(
         messages += Message("user", userQuery)
 
         repeat(maxIterations) { iteration ->
-            println("[ToolLoop] iteration=${iteration + 1}/${maxIterations}")
-
             val spinner = Spinner("${Colors.DARK_GRAY}Обрабатываю${Colors.RESET}")
             val response = gateway.chat(messages, model, "tool-calling", options).also { spinner.stop() }
             if (response == null) {
-                println("[ToolLoop][ERROR] LLM returned null on iteration=${iteration + 1}")
                 return "LLM returned no response."
             }
             val raw = response.content
-            println("[ToolLoop] raw_length=${raw.length} raw_preview=${raw.take(200).replace("\n", "↵")}")
 
             // Pre-validation: XML format hard block
             if (OutputValidator.containsXml(raw)) {
-                println("[ToolLoop][WARN] XML format detected, rejecting raw=${raw.take(200).replace("\n", "↵")}")
                 parseErrorCount++
                 if (parseErrorCount > OutputValidator.MAX_PARSE_RETRIES) {
-                    println("[ToolLoop][ERROR] Max parse retries exceeded (xml), returning fallback")
                     return OutputValidator.FALLBACK_MESSAGE
                 }
                 messages += Message("assistant", raw)
@@ -68,10 +63,8 @@ class ToolCallingLoop(
 
             when (val decision = parseDecision(raw)) {
                 is ToolCallDecision.FinalAnswer -> {
-                    println("[ToolLoop] decision=FinalAnswer")
                     val text = decision.text
                     if (!OutputValidator.isSafeForUser(text)) {
-                        println("[ToolLoop][ERROR] FinalAnswer failed safety check, returning fallback")
                         return OutputValidator.FALLBACK_MESSAGE
                     }
                     return text
@@ -79,7 +72,6 @@ class ToolCallingLoop(
 
                 is ToolCallDecision.ParseError -> {
                     val r = decision.raw
-                    println("[ToolLoop] decision=ParseError raw=${r.take(300).replace("\n", "↵")}")
 
                     // Natural language escape: LLM gave coherent answer but forgot FINAL_ANSWER prefix
                     val looksNatural = r.length > 60
@@ -87,13 +79,11 @@ class ToolCallingLoop(
                         && !r.contains("<invoke")
                         && OutputValidator.isSafeForUser(r)
                     if (looksNatural) {
-                        println("[ToolLoop] ParseError looks like natural answer (len=${r.length}), returning as-is")
                         return r
                     }
 
                     parseErrorCount++
                     if (parseErrorCount > OutputValidator.MAX_PARSE_RETRIES) {
-                        println("[ToolLoop][ERROR] Max parse retries exceeded, returning fallback")
                         return OutputValidator.FALLBACK_MESSAGE
                     }
 
@@ -102,35 +92,18 @@ class ToolCallingLoop(
                         r.trimEnd().endsWith(":") || r.length < 40 -> "response looks like preamble"
                         else -> "unrecognized format"
                     }
-                    println("[ToolLoop][WARN] ParseError reason=$reason retries=$parseErrorCount")
                     messages += Message("assistant", r)
                     messages += Message("user", OutputValidator.parseErrorRecoveryPrompt(r, reason))
                     return@repeat
                 }
 
                 is ToolCallDecision.CallTool -> {
-                    println("[ToolLoop] decision=CallTool tool=${decision.toolName} args=${decision.arguments}")
-
                     val args: MutableMap<String, JsonElement> = decision.arguments.toMutableMap()
 
-                    // Safety: detect prematurely-serialized list/object args (double serialization guard)
-                    args.forEach { (k, v) ->
-                        if (v is JsonPrimitive && v.isString) {
-                            val s = v.content
-                            if (s.startsWith("[") || s.startsWith("{")) {
-                                println("[ToolLoop][WARN] DOUBLE SERIALIZED ARG DETECTED: key=$k value=$s")
-                            }
-                        }
-                    }
-
-                    val injected = ChatIdInjector.enrich(decision.toolName, args, chatId)
-                    println("[ToolLoop] chat_id_injected=$injected tool=${decision.toolName}")
+                    ChatIdInjector.enrich(decision.toolName, args, chatId)
 
                     val toolDef = toolByName[decision.toolName]
                     val finalArgs = ChatIdInjector.stripUnknownArgs(toolDef?.inputSchema, args).toMutableMap()
-                    if (finalArgs.size != args.size) {
-                        println("[ToolLoop] stripped ${args.keys - finalArgs.keys} from tool=${decision.toolName}")
-                    }
 
                     // Guard: disabled tool
                     if (failureEngine.isDisabled(decision.toolName)) {
@@ -140,7 +113,6 @@ class ToolCallingLoop(
                             if (fallback != null) appendLine("Use '$fallback' instead.")
                             else appendLine("No fallback available. Respond with FINAL_ANSWER if you cannot proceed.")
                         }.trimEnd()
-                        println("[ToolFailure] blocked disabled tool=${decision.toolName} fallback=$fallback")
                         messages += Message("assistant", raw)
                         messages += Message("user", msg)
                         return@repeat
@@ -149,16 +121,13 @@ class ToolCallingLoop(
                     // Guard: identical retry
                     if (failureEngine.isAlreadyCalled(decision.toolName, finalArgs)) {
                         val msg = failureEngine.buildIdenticalRetryMessage(decision.toolName)
-                        println("[ToolFailure] identical retry blocked: tool=${decision.toolName} args=$finalArgs")
                         messages += Message("assistant", raw)
                         messages += Message("user", msg)
                         return@repeat
                     }
 
                     val ownerSession = toolOwner[decision.toolName]
-                    println("[ToolLoop] routing tool=${decision.toolName} → server=${ownerSession?.name ?: "unknown"} final_args=$finalArgs")
                     if (ownerSession == null) {
-                        println("[ToolLoop][ERROR] Tool=${decision.toolName} not found in any connected server")
                         messages += Message("assistant", raw)
                         messages += Message("user", "Tool ${decision.toolName} is not available. Choose from available tools only.")
                         return@repeat
@@ -168,14 +137,7 @@ class ToolCallingLoop(
 
                     val callResult = runCatching {
                         val element = ownerSession.callTool(decision.toolName, finalArgs)
-                        if (element != null) {
-                            val rendered = renderToolResult(element)
-                            println("[ToolLoop] tool_result=${rendered.take(300)}")
-                            rendered
-                        } else {
-                            println("[ToolLoop][WARN] Tool=${decision.toolName} returned null element")
-                            null
-                        }
+                        if (element != null) renderToolResult(element) else null
                     }
 
                     when {
@@ -193,10 +155,8 @@ class ToolCallingLoop(
                         else -> {
                             val e = callResult.exceptionOrNull()!!
                             val errorMsg = e.message ?: "unknown error"
-                            println("[ToolFailure] tool=${decision.toolName} error=$errorMsg")
                             val failureType = failureEngine.recordFailure(decision.toolName, errorMsg)
                             val replan = failureEngine.buildReplanMessage(decision.toolName, failureType, errorMsg)
-                            println("[ToolFailure] type=${failureType.name} replan=$replan")
                             messages += Message("assistant", raw)
                             messages += Message("user", replan)
                         }
@@ -205,7 +165,6 @@ class ToolCallingLoop(
             }
         }
 
-        println("[ToolLoop][ERROR] Exceeded maxIterations=$maxIterations")
         return "Не удалось выполнить запрос: агент исчерпал количество попыток. Попробуйте переформулировать запрос."
     }
 
@@ -232,6 +191,42 @@ class ToolCallingLoop(
 - Все относительные выражения времени ("через 5 минут", "через 2 часа", "завтра в 9") ДОЛЖНЫ разрешаться по этой метке времени
 $chatIdLine
 """
+
+        val repoContextBlock = if (gitContext != null) {
+            """
+
+---
+
+<repo_context>
+Branch: ${gitContext.branch}
+Files:
+${gitContext.fileList.take(50).joinToString("\n") { "  $it" }}
+</repo_context>
+"""
+        } else ""
+
+        val ragContextBlock = if (!ragContext.isNullOrBlank()) {
+            """
+
+---
+
+<documentation>
+$ragContext
+</documentation>
+"""
+        } else ""
+
+        val errorsBlock = if (systemErrors.isNotEmpty()) {
+            """
+
+---
+
+<system_errors>
+${systemErrors.joinToString("\n") { "- $it" }}
+</system_errors>
+Объясни пользователю понятным языком, что произошла ошибка при подготовке контекста, и постарайся помочь насколько возможно без него.
+"""
+        } else ""
 
         return """
 Ты — дружелюбный AI-ассистент, который общается с пользователем в Telegram.
@@ -417,6 +412,10 @@ tavily-search → tavily-extract → save_document
 Когда можно помочь с помощью MCP — используй инструменты.
 
 Когда инструменты не нужны — просто дай качественный ответ.
+$repoContextBlock
+$ragContextBlock
+$errorsBlock
+${if (!extraSystemPrompt.isNullOrBlank()) "\n---\n\n$extraSystemPrompt" else ""}
 """
             .trimIndent()
     }
