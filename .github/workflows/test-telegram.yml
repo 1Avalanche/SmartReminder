@@ -10,7 +10,7 @@ jobs:
     steps:
       - name: Send Telegram message
         run: |
-          curl -X POST "https://${{secrets.VPS_IP}}:8080/api/message" \
+          curl -X POST "https://${{secrets.VPS_IP}}:8084/api/message" \
             -H "Content-Type: application/json" \
             -H "X-Api-Key: AGENT_API_KEY" \
             -d '{
