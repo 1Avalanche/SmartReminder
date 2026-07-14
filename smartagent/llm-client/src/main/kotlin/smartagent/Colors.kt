@@ -12,3 +12,7 @@ object Colors {
     const val BOLD     = "[1m"
     const val BOLD_OFF = "[22m"
 }
+
+class test_class() {
+    
+}
