@@ -34,7 +34,8 @@ class TicketMcpSession(private val repo: TicketRepository) : McpSession(
     override fun listTools(): List<McpTool> = TOOLS
 
     override fun callTool(toolName: String, arguments: Map<String, JsonElement>): JsonElement? {
-        return when (toolName) {
+        println("[TicketMCP] → $toolName args=$arguments")
+        val result = when (toolName) {
             "create_ticket" -> handleCreateTicket(arguments)
             "get_ticket" -> handleGetTicket(arguments)
             "list_user_tickets" -> handleListUserTickets(arguments)
@@ -42,6 +43,8 @@ class TicketMcpSession(private val repo: TicketRepository) : McpSession(
             "close_ticket" -> handleCloseTicket(arguments)
             else -> JsonPrimitive("Unknown tool: $toolName")
         }
+        println("[TicketMCP] ← $toolName result=$result")
+        return result
     }
 
     private fun handleCreateTicket(args: Map<String, JsonElement>): JsonElement {
@@ -165,7 +168,7 @@ class TicketMcpSession(private val repo: TicketRepository) : McpSession(
             ),
             McpTool(
                 name = "list_global_tickets",
-                description = "List all GLOBAL tickets (known app-wide issues). Optionally filter by status (OPEN or CLOSED).",
+                description = "List all GLOBAL tickets of application (known app-wide issues). Optionally filter by status (OPEN or CLOSED).",
                 inputSchema = buildJsonObject {
                     put("type", "object")
                     put("properties", buildJsonObject {

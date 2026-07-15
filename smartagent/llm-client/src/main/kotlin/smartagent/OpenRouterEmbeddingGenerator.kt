@@ -55,9 +55,14 @@ class OpenRouterEmbeddingGenerator(
             }
             val responseBody = bodyStr?.takeIf { s -> s.isNotBlank() }
                 ?: throw IllegalStateException("OpenRouter returned empty response")
-            val parsed = json.decodeFromString<EmbedResponse>(responseBody)
+            val parsed = runCatching { json.decodeFromString<EmbedResponse>(responseBody) }
+                .getOrElse { e ->
+                    throw IllegalStateException(
+                        "OpenRouter embeddings parse error: ${e.message}\nRaw response: $responseBody", e
+                    )
+                }
             val vector = parsed.data.firstOrNull()?.embedding?.toFloatArray()
-                ?: throw IllegalStateException("OpenRouter returned empty embeddings")
+                ?: throw IllegalStateException("OpenRouter returned empty embeddings list. Raw: $responseBody")
             return EmbeddingResult(vector = vector, promptTokens = 0)
         }
     }
