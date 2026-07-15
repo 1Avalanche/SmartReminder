@@ -29,7 +29,8 @@ object ToolCallingAgent {
         ragContext: String? = null,
         gitContext: DocGitContext? = null,
         systemErrors: List<String> = emptyList(),
-        extraSystemPrompt: String? = null
+        extraSystemPrompt: String? = null,
+        maxIterations: Int = 4
     ): String {
         val chatHistory = histories.getOrPut(chatId ?: 0L) { ChatHistory() }
 
@@ -51,6 +52,7 @@ object ToolCallingAgent {
 
         val loop = ToolCallingLoop(
             connectedSessions, gateway, model,
+            maxIterations = maxIterations,
             chatId = chatId, options = options,
             ragContext = ragContext, gitContext = gitContext,
             systemErrors = systemErrors,

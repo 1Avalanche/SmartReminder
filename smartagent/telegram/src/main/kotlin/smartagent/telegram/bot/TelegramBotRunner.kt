@@ -10,6 +10,7 @@ import smartagent.ModelConfig
 import smartagent.agent.assist.AssistOrchestrator
 import smartagent.doc.KnowledgeService
 import smartagent.mcp_handler.McpManager
+import smartagent.support.SupportOrchestrator
 import smartagent.telegram.client.TelegramApiClient
 import smartagent.tools.ToolRegistry
 import smartagent.telegram.review.TelegramReviewHandler
@@ -24,6 +25,7 @@ class TelegramBotRunner(
     private val gateway: LLMGateway,
     private val model: ModelConfig,
     private val assistOrchestrator: AssistOrchestrator,
+    private val supportOrchestrator: SupportOrchestrator,
     private val knowledgeService: KnowledgeService
 ) {
     private val client = TelegramApiClient(token)
@@ -39,8 +41,10 @@ class TelegramBotRunner(
                         client.sendMessage(chatId, handleInitCommand(text))
                     text.startsWith("/review") ->
                         handleReviewWithProgress(chatId, text)
+                    text.startsWith("/") ->
+                        client.sendMessage(chatId, "Неизвестная команда: $text")
                     else ->
-                        client.sendMessage(chatId, assistOrchestrator.handle(query = text, model = model, chatId = chatId))
+                        client.sendMessage(chatId, supportOrchestrator.handle(query = text, model = model, chatId = chatId))
                 }
                 pendingCount.decrementAndGet()
             }

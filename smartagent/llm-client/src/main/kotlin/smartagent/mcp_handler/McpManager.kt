@@ -80,6 +80,14 @@ object McpManager {
         extraServers.add(config)
     }
 
+    /** Register a pre-built session (e.g. in-process MCP) without spawning a transport. */
+    fun registerSession(name: String, session: McpSession) {
+        if (extraServers.none { it.name == name }) {
+            extraServers.add(McpServerConfig(name = name, command = emptyList(), autoConnect = false))
+        }
+        sessions[name] = session
+    }
+
     /** Cleanly stop all active sessions (call on CLI exit). */
     fun shutdown() {
         sessions.values.forEach { runCatching { it.close() } }

@@ -9,6 +9,9 @@ import smartagent.doc.JsonMetadataStorage
 import smartagent.doc.ProjectKnowledgeService
 import smartagent.doc.RagSearcher
 import smartagent.mcp_handler.McpManager
+import smartagent.support.SupportOrchestrator
+import smartagent.support.mcp.TicketMcpSession
+import smartagent.support.ticket.TicketRepository
 import smartagent.telegram.api.HttpApiServer
 import smartagent.telegram.bot.TelegramBotRunner
 import smartagent.telegram.review.TelegramReviewHandler
@@ -41,7 +44,15 @@ fun main() {
     )
     ToolRegistry.register(RagSearchTool(projectKnowledgeService))
     ToolRegistry.register(IndexInitTool(projectKnowledgeService))
+
+    val ticketDbPath = "${System.getProperty("user.home")}/.config/smartagent/tickets.json"
+    val ticketRepository = TicketRepository(ticketDbPath)
+    val ticketMcpSession = TicketMcpSession(ticketRepository)
+    McpManager.registerSession("ticket-service", ticketMcpSession)
+    println("[Support] Ticket MCP session registered (${TicketMcpSession.TOOLS.size} tools)")
+
     val assistOrchestrator = AssistOrchestrator(projectKnowledgeService, gateway)
+    val supportOrchestrator = SupportOrchestrator(projectKnowledgeService, gateway)
     val reviewHandler = TelegramReviewHandler(gateway, projectKnowledgeService)
 
     val httpPort = System.getenv("HTTP_PORT")?.toIntOrNull() ?: 8080
@@ -50,6 +61,6 @@ fun main() {
     HttpApiServer(assistOrchestrator, reviewHandler, model, httpApiKey, httpPort).start()
 
     runBlocking {
-        TelegramBotRunner(token, gateway, model, assistOrchestrator, projectKnowledgeService).start(this)
+        TelegramBotRunner(token, gateway, model, assistOrchestrator, supportOrchestrator, projectKnowledgeService).start(this)
     }
 }

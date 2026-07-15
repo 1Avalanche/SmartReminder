@@ -13,7 +13,7 @@ open class McpSession(
     @Volatile var state: McpConnectionState = McpConnectionState.DISCONNECTED
         private set
 
-    val isConnected: Boolean get() = state == McpConnectionState.CONNECTED
+    open val isConnected: Boolean get() = state == McpConnectionState.CONNECTED
 
     private var transport: McpTransport? = null
     private var client: McpClient? = null
@@ -51,7 +51,7 @@ open class McpSession(
     fun drainServerOutput(): List<String> =
         (transport as? ProcessTransport)?.drainStderr() ?: emptyList()
 
-    fun listTools(): List<McpTool> =
+    open fun listTools(): List<McpTool> =
         client?.listTools() ?: emptyList()
 
     open fun callTool(toolName: String, arguments: Map<String, JsonElement> = emptyMap()): JsonElement? =
