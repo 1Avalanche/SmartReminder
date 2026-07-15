@@ -14,7 +14,7 @@ jobs:
     steps:
       - name: Trigger AI Review
         run: |
-          curl -X POST "http://${{ secrets.VPS_IP }}/api/message" \
+          curl -X POST "http://${{ secrets.VPS_IP }}:8084/api/message" \
             -H "Content-Type: application/json" \
             -H "X-Api-Key: ${{ secrets.AGENT_API_KEY }}" \
             -d '{
