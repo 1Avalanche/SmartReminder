@@ -5,7 +5,7 @@ import kotlinx.serialization.json.JsonPrimitive
 
 enum class McpConnectionState { DISCONNECTED, CONNECTING, CONNECTED }
 
-class McpSession(
+open class McpSession(
     val name: String,
     val config: McpServerConfig
 ) : AutoCloseable {
@@ -28,8 +28,9 @@ class McpSession(
 
         val t: McpTransport = when (config.transportMode) {
             TransportMode.PROCESS -> {
+                println("[MCP] Starting ${config.name} (first run may download package)...")
                 val pt = ProcessTransport(config.command, config.workDir, config.env)
-                Thread.sleep(1_000)   // give npx time to start before we write to stdin
+                Thread.sleep(2_000)
                 pt
             }
             TransportMode.HTTP -> McpHttpTransport(
@@ -38,10 +39,10 @@ class McpSession(
             )
         }
 
+        transport = t
         val c = McpClient(t)
         c.initialize()
 
-        transport = t
         client = c
         state = McpConnectionState.CONNECTED
     }
@@ -53,7 +54,7 @@ class McpSession(
     fun listTools(): List<McpTool> =
         client?.listTools() ?: emptyList()
 
-    fun callTool(toolName: String, arguments: Map<String, JsonElement> = emptyMap()): JsonElement? =
+    open fun callTool(toolName: String, arguments: Map<String, JsonElement> = emptyMap()): JsonElement? =
         client?.callTool(toolName, arguments)
 
     override fun close() {

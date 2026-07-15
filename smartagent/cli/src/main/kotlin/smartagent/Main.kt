@@ -153,6 +153,7 @@ private fun runRepl(
         }
     val questionHandler = QuestionHandler(session, client, rerankerClient)
     val docInitHandler = DocInitCommandHandler(projectKnowledgeService, ToolRegistry)
+    val reviewHandler = ReviewCommandHandler(projectKnowledgeService, gateway)
 
     while (true) {
         print("${Colors.BRIGHT_WHITE}> ")
@@ -294,6 +295,12 @@ private fun runRepl(
             }
             input == "/scenario off" -> println("${Colors.DARK_GRAY}Scenario runs and completes automatically. No active scenario to stop.${Colors.RESET}")
             input == "/scenario" -> println("${Colors.LIGHT_YELLOW}Usage: /scenario on | /scenario off${Colors.RESET}")
+            // Review command
+            input.startsWith("/review ") -> {
+                val args = input.removePrefix("/review ").trim().split("\\s+".toRegex())
+                reviewHandler.handle(args)
+            }
+            input == "/review" -> println("${Colors.LIGHT_YELLOW}Usage: /review <owner>/<repo> <pr_number>${Colors.RESET}")
             // Doc index commands
             input.startsWith("/init ") -> {
                 val args = input.removePrefix("/init ").trim().split("\\s+".toRegex())
@@ -400,6 +407,8 @@ Doc index commands (assist mode):
   /init <owner>/<repo> [--branch <branch>] [path1...]
                                   Init doc index from GitHub via MCP
   /index-info                     Show current doc index stats
+  /review <owner>/<repo> <pr_number>
+                                  AI code review of a GitHub PR (posts comment)
 
 MCP commands (any mode):
   /mcp list                       List registered MCP servers and status

@@ -22,10 +22,7 @@ object McpRemoteConfig {
                 add(RemoteServerEntry(name = "tavily-mcp", url = tavilyUrl, apiKey = null, autoConnect = false))
             }
 
-            val githubToken = get("GITHUB_PERSONAL_ACCESS_TOKEN")
-            if (githubToken != null) {
-                add(RemoteServerEntry(name = "github", url = "https://api.githubcopilot.com/mcp/", apiKey = githubToken))
-            }
+            // GitHub is configured as a local process server in McpManager (github/github-mcp-server)
         }
     }
 

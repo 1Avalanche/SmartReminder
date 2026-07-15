@@ -3,8 +3,11 @@ package smartagent
 import smartagent.doc.ProjectKnowledgeService
 import smartagent.mcp_handler.McpManager
 import smartagent.tools.ToolRegistry
+import smartagent.tools.github.GitHubCreatePRCommentTool
 import smartagent.tools.github.GitHubGetDiffTool
 import smartagent.tools.github.GitHubGetFileContentsTool
+import smartagent.tools.github.GitHubGetPRFilesTool
+import smartagent.tools.github.GitHubGetPRTool
 import smartagent.tools.github.GitHubListBranchesTool
 import smartagent.tools.github.GitHubListCommitsTool
 import smartagent.tools.github.GitHubSearchCodeTool
@@ -42,6 +45,9 @@ class DocInitCommandHandler(
         registry.register(GitHubListCommitsTool(session))
         registry.register(GitHubGetDiffTool(session))
         registry.register(GitHubListBranchesTool(session))
+        registry.register(GitHubGetPRTool(session))
+        registry.register(GitHubGetPRFilesTool(session))
+        registry.register(GitHubCreatePRCommentTool(session))
 
         println("${Colors.LIGHT_GREEN}GitHub MCP connected.${Colors.RESET}")
 

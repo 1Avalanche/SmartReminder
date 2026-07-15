@@ -10,10 +10,12 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.longOrNull
 import smartagent.ModelConfig
 import smartagent.agent.assist.AssistOrchestrator
+import smartagent.telegram.review.TelegramReviewHandler
 import java.net.InetSocketAddress
 
 class HttpApiServer(
     private val assistOrchestrator: AssistOrchestrator,
+    private val reviewHandler: TelegramReviewHandler,
     private val model: ModelConfig,
     private val apiKey: String,
     private val port: Int = 8080
@@ -53,8 +55,13 @@ class HttpApiServer(
         val chatId = parsed["chatId"]?.jsonPrimitive?.longOrNull ?: 0L
 
         Thread {
-            runCatching { assistOrchestrator.handle(query = text, model = model, chatId = chatId) }
-                .onFailure { e -> println("[HttpApi] Agent error: ${e.message}") }
+            if (text.startsWith("/review")) {
+                runCatching { reviewHandler.handleText(text) }
+                    .onFailure { e -> println("[HttpApi] Review error: ${e.message}") }
+            } else {
+                runCatching { assistOrchestrator.handle(query = text, model = model, chatId = chatId) }
+                    .onFailure { e -> println("[HttpApi] Agent error: ${e.message}") }
+            }
         }.also { it.isDaemon = true }.start()
 
         respond(exchange, 200, """{"requestHandled":true}""")

@@ -1,6 +1,7 @@
 package smartagent.mcp_handler
 
 import smartagent.Colors
+import smartagent.Config
 
 /**
  * Central registry for MCP server configurations and active sessions.
@@ -43,24 +44,30 @@ object McpManager {
     }
 
     /**
-     * Connects to all configured remote servers in parallel, logging per-server results.
+     * Connects to all autoConnect servers in parallel, logging per-server results with tool names.
      * Each server runs in its own daemon thread; all threads are joined before returning.
      * A single server failure does not block others.
      */
     fun initRemoteServers() {
-        val remoteServers = builtinServers.filter { it.transportMode == TransportMode.HTTP && it.autoConnect }
-        if (remoteServers.isEmpty()) {
-            println("${Colors.DARK_GRAY}[MCP] No remote servers configured.${Colors.RESET}")
+        val autoConnectServers = builtinServers.filter { it.autoConnect }
+        if (autoConnectServers.isEmpty()) {
+            println("${Colors.DARK_GRAY}[MCP] No servers configured for auto-connect.${Colors.RESET}")
             return
         }
-        val threads = remoteServers.map { cfg ->
+        val threads = autoConnectServers.map { cfg ->
             Thread {
                 try {
                     val session = initServer(cfg.name)
                     val tools = session.listTools()
-                    println("${Colors.LIGHT_GREEN}[MCP] Connected: ${cfg.name} — ${tools.size} tool(s) discovered${Colors.RESET}")
+                    println("${Colors.LIGHT_GREEN}[MCP] ${cfg.name}: ${tools.size} tools${Colors.RESET}")
+                    tools.forEach { tool ->
+                        println("${Colors.DARK_GRAY}  · ${tool.name}${Colors.RESET}")
+                    }
                 } catch (e: Exception) {
                     println("${Colors.LIGHT_YELLOW}[MCP] Failed to connect to ${cfg.name}: ${e.message}${Colors.RESET}")
+                    sessions[cfg.name]?.drainServerOutput()?.forEach { line ->
+                        println("${Colors.DARK_GRAY}  [stderr] $line${Colors.RESET}")
+                    }
                 }
             }.also { it.isDaemon = true; it.start() }
         }
@@ -80,19 +87,43 @@ object McpManager {
     }
 
     internal fun buildBuiltinServers(remoteEntries: List<RemoteServerEntry>): List<McpServerConfig> = buildList {
-        add(McpServerConfig(
-            name = "filesystem",
-            command = listOf("npx", "-y", "@modelcontextprotocol/server-filesystem", cwd),
-            workDir = cwd
-        ))
+        add(
+            McpServerConfig(
+                name = "filesystem",
+                command = listOf("npx", "-y", "@modelcontextprotocol/server-filesystem", cwd),
+                workDir = cwd,
+                autoConnect = false
+            )
+        )
+        val githubToken = Config.localProperties["GITHUB_PERSONAL_ACCESS_TOKEN"]
+            ?: System.getenv("GITHUB_PERSONAL_ACCESS_TOKEN")
+        if (githubToken != null) {
+            add(
+                McpServerConfig(
+                    name = "github",
+                    command = listOf(
+                        "npx",
+                        "-y",
+                        "@modelcontextprotocol/server-github"
+                    ),
+                    workDir = cwd,
+                    env = mapOf(
+                        "GITHUB_PERSONAL_ACCESS_TOKEN" to githubToken
+                    ),
+                    autoConnect = true
+                )
+            )
+        }
         remoteEntries.forEach { entry ->
-            add(McpServerConfig(
-                name = entry.name,
-                transportMode = TransportMode.HTTP,
-                httpUrl = entry.url,
-                apiKey = entry.apiKey,
-                autoConnect = entry.autoConnect
-            ))
+            add(
+                McpServerConfig(
+                    name = entry.name,
+                    transportMode = TransportMode.HTTP,
+                    httpUrl = entry.url,
+                    apiKey = entry.apiKey,
+                    autoConnect = entry.autoConnect
+                )
+            )
         }
     }
 }

@@ -11,6 +11,7 @@ import smartagent.doc.RagSearcher
 import smartagent.mcp_handler.McpManager
 import smartagent.telegram.api.HttpApiServer
 import smartagent.telegram.bot.TelegramBotRunner
+import smartagent.telegram.review.TelegramReviewHandler
 import smartagent.tools.ToolRegistry
 import smartagent.tools.index.IndexInitTool
 import smartagent.tools.rag.RagSearchTool
@@ -41,11 +42,12 @@ fun main() {
     ToolRegistry.register(RagSearchTool(projectKnowledgeService))
     ToolRegistry.register(IndexInitTool(projectKnowledgeService))
     val assistOrchestrator = AssistOrchestrator(projectKnowledgeService, gateway)
+    val reviewHandler = TelegramReviewHandler(gateway, projectKnowledgeService)
 
     val httpPort = System.getenv("HTTP_PORT")?.toIntOrNull() ?: 8080
     val httpApiKey = System.getenv("HTTP_API_KEY")
         ?: error("HTTP_API_KEY env var not set")
-    HttpApiServer(assistOrchestrator, model, httpApiKey, httpPort).start()
+    HttpApiServer(assistOrchestrator, reviewHandler, model, httpApiKey, httpPort).start()
 
     runBlocking {
         TelegramBotRunner(token, gateway, model, assistOrchestrator, projectKnowledgeService).start(this)

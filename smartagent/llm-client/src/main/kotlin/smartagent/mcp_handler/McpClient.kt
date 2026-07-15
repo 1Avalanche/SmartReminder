@@ -1,6 +1,7 @@
 package smartagent.mcp_handler
 
 import kotlinx.serialization.json.*
+import smartagent.NetworkLogger
 import java.util.concurrent.atomic.AtomicInteger
 
 data class McpTool(
@@ -27,7 +28,7 @@ class McpClient(private val transport: McpTransport) : AutoCloseable {
             })
         }
         transport.send(JsonRpcSerializer.buildRequest(id, "initialize", params))
-        waitForResponse(id) ?: error("initialize timed out — is the server running?")
+        waitForResponse(id, timeoutMs = 120_000) ?: error("initialize timed out — is the server running?")
 
         // Spec requires this notification before any tool requests
         transport.send(JsonRpcSerializer.buildNotification("notifications/initialized"))
@@ -63,7 +64,25 @@ class McpClient(private val transport: McpTransport) : AutoCloseable {
             })
         }
         transport.send(JsonRpcSerializer.buildRequest(id, "tools/call", params))
-        return waitForResponse(id)?.get("result")
+        val response = waitForResponse(id)
+        val result = response?.get("result")
+
+        NetworkLogger.logEvent(
+            source = "[MCP] tools/call $name",
+            message = buildString {
+                appendLine("args: $arguments")
+                if (response == null) {
+                    appendLine("response: TIMEOUT or no response")
+                } else {
+                    appendLine("raw response: $response")
+                    if (result == null) {
+                        appendLine("WARNING: no 'result' key — likely JSON-RPC error: ${response["error"]}")
+                    }
+                }
+            }
+        )
+
+        return result
     }
 
     /**

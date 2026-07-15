@@ -12,6 +12,7 @@ import smartagent.doc.KnowledgeService
 import smartagent.mcp_handler.McpManager
 import smartagent.telegram.client.TelegramApiClient
 import smartagent.tools.ToolRegistry
+import smartagent.telegram.review.TelegramReviewHandler
 import smartagent.tools.github.GitHubGetDiffTool
 import smartagent.tools.github.GitHubGetFileContentsTool
 import smartagent.tools.github.GitHubListBranchesTool
@@ -28,16 +29,19 @@ class TelegramBotRunner(
     private val client = TelegramApiClient(token)
     private val requestChannel = Channel<Pair<Long, String>>(Channel.UNLIMITED)
     private val pendingCount = AtomicInteger(0)
+    private val reviewHandler = TelegramReviewHandler(gateway, knowledgeService)
 
     fun start(scope: CoroutineScope) {
         scope.launch(Dispatchers.IO) {
             for ((chatId, text) in requestChannel) {
-                val answer = if (text.startsWith("/init ") || text == "/init") {
-                    handleInitCommand(text)
-                } else {
-                    assistOrchestrator.handle(query = text, model = model, chatId = chatId)
+                when {
+                    text.startsWith("/init ") || text == "/init" ->
+                        client.sendMessage(chatId, handleInitCommand(text))
+                    text.startsWith("/review") ->
+                        handleReviewWithProgress(chatId, text)
+                    else ->
+                        client.sendMessage(chatId, assistOrchestrator.handle(query = text, model = model, chatId = chatId))
                 }
-                client.sendMessage(chatId, answer)
                 pendingCount.decrementAndGet()
             }
         }
@@ -60,6 +64,22 @@ class TelegramBotRunner(
                 }
             }
         }
+    }
+
+    private suspend fun handleReviewWithProgress(chatId: Long, text: String) {
+        val parsed = reviewHandler.parseCommand(text)
+        if (parsed == null) {
+            client.sendMessage(chatId, reviewHandler.parseErrorMessage(text))
+            return
+        }
+        client.sendMessage(chatId, "Начинаю ревью ${parsed.owner}/${parsed.repo} ${parsed.prNumber}")
+        reviewHandler.runAndPublish(parsed.owner, parsed.repo, parsed.prNumber)
+            .onSuccess { markdown ->
+                client.sendMessage(chatId, "Результат ревью ${parsed.owner}/${parsed.repo} ${parsed.prNumber}\n\n$markdown")
+            }
+            .onFailure { e ->
+                client.sendMessage(chatId, "Ошибка ревью: ${e.message}")
+            }
     }
 
     private fun handleInitCommand(text: String): String {
