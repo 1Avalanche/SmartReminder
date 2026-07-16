@@ -17,5 +17,5 @@ jobs:
             -H "Content-Type: application/json" \
             -H "X-Api-Key: ${{ secrets.AGENT_API_KEY }}" \
             -d '{
-              "text": "/push ${{ github.repository }} ${{ github.ref_name }} ${{ github.event.pull_request.base.sha }} ${{ github.sha }}"
+              "text": "/push ${{ github.repository }} ${{ github.ref_name }} ${{ github.event.pull_request.base.sha }} ${{ github.event.pull_request.head.sha }} ${{ github.event.pull_request.number }}"
             }'

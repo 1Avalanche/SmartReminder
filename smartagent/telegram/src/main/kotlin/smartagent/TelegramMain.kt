@@ -56,7 +56,7 @@ fun main() {
     val assistOrchestrator = AssistOrchestrator(projectKnowledgeService, gateway)
     val supportOrchestrator = SupportOrchestrator(projectKnowledgeService, gateway)
     val reviewHandler = TelegramReviewHandler(gateway, projectKnowledgeService)
-    val pushHandler = TelegramPushHandler()
+    val pushHandler = TelegramPushHandler(gateway, model)
 
     val httpPort = System.getenv("HTTP_PORT")?.toIntOrNull() ?: 8080
     val httpApiKey = System.getenv("HTTP_API_KEY")
