@@ -10,7 +10,6 @@ import kotlinx.serialization.json.jsonPrimitive
 import smartagent.mcp_handler.McpSession
 import smartagent.mcp_handler.renderToolResult
 import java.time.LocalDate
-import java.util.Base64
 
 class PushHandler(private val session: McpSession) {
 
@@ -140,10 +139,7 @@ class PushHandler(private val session: McpSession) {
 
             val fileInfo = try { Json.parseToJsonElement(text).jsonObject } catch (_: Exception) { continue }
             val sha = fileInfo["sha"]?.jsonPrimitive?.content ?: continue
-            val encodedContent = fileInfo["content"]?.jsonPrimitive?.content ?: continue
-            val rawContent = try {
-                Base64.getDecoder().decode(encodedContent.replace("\n", "")).toString(Charsets.UTF_8)
-            } catch (_: Exception) { continue }
+            val rawContent = fileInfo["content"]?.jsonPrimitive?.content ?: continue
 
             return ChangelogFile(candidate, sha, rawContent)
         }
@@ -152,14 +148,13 @@ class PushHandler(private val session: McpSession) {
 
     private fun writeChangelog(owner: String, repo: String, branch: String, existing: ChangelogFile?, newContent: String): String {
         val path = existing?.path ?: DEFAULT_CHANGELOG
-        val encodedContent = Base64.getEncoder().encodeToString(newContent.toByteArray(Charsets.UTF_8))
 
         val args = buildMap<String, JsonElement> {
             put("owner", JsonPrimitive(owner))
             put("repo", JsonPrimitive(repo))
             put("path", JsonPrimitive(path))
             put("message", JsonPrimitive("chore: update changelog for push to $branch"))
-            put("content", JsonPrimitive(encodedContent))
+            put("content", JsonPrimitive(newContent))
             put("branch", JsonPrimitive(branch))
             if (existing != null) put("sha", JsonPrimitive(existing.sha))
         }
