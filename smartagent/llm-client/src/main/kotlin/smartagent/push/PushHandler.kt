@@ -15,7 +15,7 @@ class PushHandler(private val session: McpSession) {
 
     data class FileChange(val filename: String, val status: String, val additions: Int, val deletions: Int)
 
-    data class DiffResult(val files: List<FileChange>, val authorName: String, val commitMessage: String)
+    data class DiffResult(val files: List<FileChange>, val authors: List<String>, val commitMessages: List<String>)
 
     data class ChangelogFile(val path: String, val sha: String, val rawContent: String)
 
@@ -73,11 +73,11 @@ class PushHandler(private val session: McpSession) {
             }
         }
 
-        return DiffResult(emptyList(), "unknown", "")
+        return DiffResult(emptyList(), listOf("unknown"), emptyList())
     }
 
     internal fun parseDiffResult(text: String): DiffResult {
-        val json = try { Json.parseToJsonElement(text).jsonObject } catch (_: Exception) { return DiffResult(emptyList(), "unknown", "") }
+        val json = try { Json.parseToJsonElement(text).jsonObject } catch (_: Exception) { return DiffResult(emptyList(), listOf("unknown"), emptyList()) }
 
         val files = json["files"]?.jsonArray?.mapNotNull { el ->
             val obj = el.jsonObject
@@ -88,27 +88,33 @@ class PushHandler(private val session: McpSession) {
             FileChange(filename, status, additions, deletions)
         } ?: emptyList()
 
-        val firstCommit = json["commits"]?.jsonArray?.firstOrNull()?.jsonObject
-        val commitObj = firstCommit?.get("commit")?.jsonObject
-        val authorName = commitObj?.get("author")?.jsonObject?.get("name")?.jsonPrimitive?.content ?: "unknown"
-        val commitMessage = commitObj?.get("message")?.jsonPrimitive?.content?.lines()?.firstOrNull() ?: ""
+        val commits = json["commits"]?.jsonArray ?: kotlinx.serialization.json.JsonArray(emptyList())
+        val authors = commits.mapNotNull { el ->
+            el.jsonObject["commit"]?.jsonObject?.get("author")?.jsonObject?.get("name")?.jsonPrimitive?.content
+        }.distinct().ifEmpty { listOf("unknown") }
+        val commitMessages = commits.mapNotNull { el ->
+            el.jsonObject["commit"]?.jsonObject?.get("message")?.jsonPrimitive?.content?.lines()?.firstOrNull()
+        }
 
-        return DiffResult(files, authorName, commitMessage)
+        return DiffResult(files, authors, commitMessages)
     }
 
     internal fun parseCommitsResult(text: String): DiffResult {
-        val arr = try { Json.parseToJsonElement(text).jsonArray } catch (_: Exception) { return DiffResult(emptyList(), "unknown", "") }
-        val firstCommit = arr.firstOrNull()?.jsonObject ?: return DiffResult(emptyList(), "unknown", "")
-        val commitObj = firstCommit["commit"]?.jsonObject
-        val authorName = commitObj?.get("author")?.jsonObject?.get("name")?.jsonPrimitive?.content ?: "unknown"
-        val commitMessage = commitObj?.get("message")?.jsonPrimitive?.content?.lines()?.firstOrNull() ?: ""
-        return DiffResult(emptyList(), authorName, commitMessage)
+        val arr = try { Json.parseToJsonElement(text).jsonArray } catch (_: Exception) { return DiffResult(emptyList(), listOf("unknown"), emptyList()) }
+        val authors = arr.mapNotNull { el ->
+            el.jsonObject["commit"]?.jsonObject?.get("author")?.jsonObject?.get("name")?.jsonPrimitive?.content
+        }.distinct().ifEmpty { listOf("unknown") }
+        val commitMessages = arr.mapNotNull { el ->
+            el.jsonObject["commit"]?.jsonObject?.get("message")?.jsonPrimitive?.content?.lines()?.firstOrNull()
+        }
+        return DiffResult(emptyList(), authors, commitMessages)
     }
 
     internal fun buildEntry(diff: DiffResult, branch: String): String {
         val date = LocalDate.now().toString()
+        val authorsStr = diff.authors.joinToString(", ")
         return buildString {
-            appendLine("## $date — ${diff.authorName} (branch: $branch)")
+            appendLine("## $date — $authorsStr (branch: $branch)")
             if (diff.files.isNotEmpty()) {
                 appendLine()
                 for (f in diff.files) {
@@ -116,9 +122,11 @@ class PushHandler(private val session: McpSession) {
                     appendLine("- ${f.filename} (${f.status}$stats)")
                 }
             }
-            if (diff.commitMessage.isNotBlank()) {
+            if (diff.commitMessages.isNotEmpty()) {
                 appendLine()
-                append("> \"${diff.commitMessage}\"")
+                for (msg in diff.commitMessages) {
+                    appendLine("> \"$msg\"")
+                }
             }
         }.trimEnd()
     }

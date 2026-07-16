@@ -33,7 +33,7 @@ class HttpApiServer(
         server.createContext("/api/message") { exchange -> handleMessage(exchange) }
         server.executor = null
         server.start()
-        println("[HttpApi] Listening on port $port")
+        println("[HttpApi] Listening on port $port — commands: /review, /push, (text→agent)")
     }
 
     private fun handleMessage(exchange: HttpExchange) {

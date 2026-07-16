@@ -40,8 +40,12 @@ class TelegramBotRunner(
                         client.sendMessage(chatId, handleInitCommand(text))
                     text.startsWith("/review") ->
                         handleReviewWithProgress(chatId, text)
+                    text == "/help" ->
+                        client.sendMessage(chatId, HELP_TEXT)
+                    text.startsWith("/push") ->
+                        client.sendMessage(chatId, "/push доступна только через HTTP API (POST /api/message)")
                     text.startsWith("/") ->
-                        client.sendMessage(chatId, "Неизвестная команда: $text")
+                        client.sendMessage(chatId, "Неизвестная команда: $text\n\nНапиши /help для списка команд.")
                     else ->
                         client.sendMessage(chatId, supportOrchestrator.handle(query = text, model = model, chatId = chatId))
                 }
@@ -83,6 +87,18 @@ class TelegramBotRunner(
             .onFailure { e ->
                 client.sendMessage(chatId, "Ошибка ревью: ${e.message}")
             }
+    }
+
+    companion object {
+        private val HELP_TEXT = """
+            Доступные команды:
+            /review <owner>/<repo> <pr> — AI-ревью pull request
+            /init <owner>/<repo> [--branch <ветка>] [пути...] — индексация репозитория
+            /push — только через HTTP API
+            /help — эта справка
+
+            Любое сообщение без команды обрабатывается как вопрос к поддержке.
+        """.trimIndent()
     }
 
     private fun handleInitCommand(text: String): String {
