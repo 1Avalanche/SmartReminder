@@ -7,6 +7,11 @@ import smartagent.ModelConfig
 import smartagent.OllamaOptions
 import smartagent.doc.KnowledgeService
 import smartagent.doc.ProjectContext
+import smartagent.review.ReviewCategory
+import smartagent.review.ReviewContext
+import smartagent.review.ReviewIssue
+import smartagent.review.ReviewReport
+import smartagent.review.ReviewSeverity
 import smartagent.tools.index.IndexMetadata
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
@@ -86,5 +91,83 @@ class TelegramReviewHandlerTest {
         val result = handler.runAndPublish("owner", "repo", 1)
         assert(result.isFailure)
         assertContains(result.exceptionOrNull()?.message ?: "", "GitHub MCP не подключён")
+    }
+
+    // --- formatTelegramSummary ---
+
+    private fun makeReviewResult(
+        filesJson: String = """[{"filename":"Foo.kt","status":"modified"},{"filename":"Bar.kt","status":"added"}]""",
+        issues: List<ReviewIssue> = listOf(
+            ReviewIssue(ReviewSeverity.CRITICAL, ReviewCategory.BUG, "Foo.kt", 10, "desc", "fix"),
+            ReviewIssue(ReviewSeverity.HIGH, ReviewCategory.SECURITY, "Bar.kt", null, "desc2", "fix2")
+        )
+    ): TelegramReviewHandler.ReviewResult {
+        val ctx = ReviewContext(
+            owner = "acme", repo = "myrepo", pullRequestNumber = 42,
+            prTitle = "Add feature", prDescription = "",
+            baseBranch = "main", headBranch = "feature/x",
+            changedFiles = filesJson, diff = "", ragContext = "", projectRules = ""
+        )
+        val report = ReviewReport(
+            owner = "acme", repo = "myrepo", pullRequestNumber = 42,
+            prTitle = "Add feature", timestamp = "2024-01-01T00:00:00Z",
+            summary = "Overall looks fine.", issues = issues
+        )
+        return TelegramReviewHandler.ReviewResult(ctx, report, "")
+    }
+
+    @Test
+    fun `formatTelegramSummary contains repo name`() {
+        val msg = handler.formatTelegramSummary(makeReviewResult())
+        assertContains(msg, "acme/myrepo")
+    }
+
+    @Test
+    fun `formatTelegramSummary contains PR title and number`() {
+        val msg = handler.formatTelegramSummary(makeReviewResult())
+        assertContains(msg, "PR #42")
+        assertContains(msg, "Add feature")
+    }
+
+    @Test
+    fun `formatTelegramSummary contains branches`() {
+        val msg = handler.formatTelegramSummary(makeReviewResult())
+        assertContains(msg, "feature/x")
+        assertContains(msg, "main")
+    }
+
+    @Test
+    fun `formatTelegramSummary lists changed files`() {
+        val msg = handler.formatTelegramSummary(makeReviewResult())
+        assertContains(msg, "Foo.kt")
+        assertContains(msg, "Bar.kt")
+        assertContains(msg, "modified")
+        assertContains(msg, "added")
+    }
+
+    @Test
+    fun `formatTelegramSummary contains summary text`() {
+        val msg = handler.formatTelegramSummary(makeReviewResult())
+        assertContains(msg, "Overall looks fine.")
+    }
+
+    @Test
+    fun `formatTelegramSummary shows issue counts`() {
+        val msg = handler.formatTelegramSummary(makeReviewResult())
+        assertContains(msg, "2 найдено")
+        assertContains(msg, "CRITICAL: 1")
+        assertContains(msg, "HIGH: 1")
+    }
+
+    @Test
+    fun `formatTelegramSummary handles no issues`() {
+        val msg = handler.formatTelegramSummary(makeReviewResult(issues = emptyList()))
+        assertContains(msg, "0 найдено")
+    }
+
+    @Test
+    fun `formatTelegramSummary handles invalid files json gracefully`() {
+        val msg = handler.formatTelegramSummary(makeReviewResult(filesJson = "not-json"))
+        assertContains(msg, "acme/myrepo")
     }
 }

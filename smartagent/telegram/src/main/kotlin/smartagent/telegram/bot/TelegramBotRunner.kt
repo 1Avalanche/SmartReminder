@@ -21,14 +21,13 @@ import smartagent.tools.github.GitHubListCommitsTool
 import smartagent.tools.github.GitHubSearchCodeTool
 
 class TelegramBotRunner(
-    token: String,
+    private val client: TelegramApiClient,
     private val gateway: LLMGateway,
     private val model: ModelConfig,
     private val assistOrchestrator: AssistOrchestrator,
     private val supportOrchestrator: SupportOrchestrator,
     private val knowledgeService: KnowledgeService
 ) {
-    private val client = TelegramApiClient(token)
     private val requestChannel = Channel<Pair<Long, String>>(Channel.UNLIMITED)
     private val pendingCount = AtomicInteger(0)
     private val reviewHandler = TelegramReviewHandler(gateway, knowledgeService)
@@ -78,8 +77,8 @@ class TelegramBotRunner(
         }
         client.sendMessage(chatId, "Начинаю ревью ${parsed.owner}/${parsed.repo} ${parsed.prNumber}")
         reviewHandler.runAndPublish(parsed.owner, parsed.repo, parsed.prNumber)
-            .onSuccess { markdown ->
-                client.sendMessage(chatId, "Результат ревью ${parsed.owner}/${parsed.repo} ${parsed.prNumber}\n\n$markdown")
+            .onSuccess { result ->
+                client.sendMessage(chatId, reviewHandler.formatTelegramSummary(result))
             }
             .onFailure { e ->
                 client.sendMessage(chatId, "Ошибка ревью: ${e.message}")

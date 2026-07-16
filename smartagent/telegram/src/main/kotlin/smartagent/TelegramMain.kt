@@ -14,6 +14,8 @@ import smartagent.support.mcp.TicketMcpSession
 import smartagent.support.ticket.TicketRepository
 import smartagent.telegram.api.HttpApiServer
 import smartagent.telegram.bot.TelegramBotRunner
+import smartagent.telegram.client.TelegramApiClient
+import smartagent.telegram.push.TelegramPushHandler
 import smartagent.telegram.review.TelegramReviewHandler
 import smartagent.tools.ToolRegistry
 import smartagent.tools.index.IndexInitTool
@@ -54,13 +56,18 @@ fun main() {
     val assistOrchestrator = AssistOrchestrator(projectKnowledgeService, gateway)
     val supportOrchestrator = SupportOrchestrator(projectKnowledgeService, gateway)
     val reviewHandler = TelegramReviewHandler(gateway, projectKnowledgeService)
+    val pushHandler = TelegramPushHandler()
 
     val httpPort = System.getenv("HTTP_PORT")?.toIntOrNull() ?: 8080
     val httpApiKey = System.getenv("HTTP_API_KEY")
         ?: error("HTTP_API_KEY env var not set")
-    HttpApiServer(assistOrchestrator, reviewHandler, model, httpApiKey, httpPort).start()
+    val telegramClient = TelegramApiClient(token)
+    HttpApiServer(
+        assistOrchestrator, reviewHandler, pushHandler, model, httpApiKey, httpPort,
+        sendTelegram = { chatId, text -> runBlocking { telegramClient.sendMessage(chatId, text) } }
+    ).start()
 
     runBlocking {
-        TelegramBotRunner(token, gateway, model, assistOrchestrator, supportOrchestrator, projectKnowledgeService).start(this)
+        TelegramBotRunner(telegramClient, gateway, model, assistOrchestrator, supportOrchestrator, projectKnowledgeService).start(this)
     }
 }

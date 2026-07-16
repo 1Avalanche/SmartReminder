@@ -10,15 +10,18 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.longOrNull
 import smartagent.ModelConfig
 import smartagent.agent.assist.AssistOrchestrator
+import smartagent.telegram.push.TelegramPushHandler
 import smartagent.telegram.review.TelegramReviewHandler
 import java.net.InetSocketAddress
 
 class HttpApiServer(
     private val assistOrchestrator: AssistOrchestrator,
     private val reviewHandler: TelegramReviewHandler,
+    private val pushHandler: TelegramPushHandler,
     private val model: ModelConfig,
     private val apiKey: String,
-    private val port: Int = 8080
+    private val port: Int = 8080,
+    private val sendTelegram: ((Long, String) -> Unit)? = null
 ) {
     private val json = Json { ignoreUnknownKeys = true }
 
@@ -55,12 +58,37 @@ class HttpApiServer(
         val chatId = parsed["chatId"]?.jsonPrimitive?.longOrNull ?: 0L
 
         Thread {
-            if (text.startsWith("/review")) {
-                runCatching { reviewHandler.handleText(text) }
-                    .onFailure { e -> println("[HttpApi] Review error: ${e.message}") }
-            } else {
-                runCatching { assistOrchestrator.handle(query = text, model = model, chatId = chatId) }
-                    .onFailure { e -> println("[HttpApi] Agent error: ${e.message}") }
+            when {
+                text.startsWith("/review") -> {
+                    val parsed = reviewHandler.parseCommand(text)
+                    if (parsed == null) {
+                        println("[HttpApi] Review parse error: ${reviewHandler.parseErrorMessage(text)}")
+                    } else {
+                        reviewHandler.runAndPublish(parsed.owner, parsed.repo, parsed.prNumber)
+                            .onSuccess { result ->
+                                if (chatId != 0L) {
+                                    val msg = reviewHandler.formatTelegramSummary(result)
+                                    runCatching { sendTelegram?.invoke(chatId, msg) }
+                                        .onFailure { e -> println("[HttpApi] Telegram send error: ${e.message}") }
+                                }
+                            }
+                            .onFailure { e -> println("[HttpApi] Review error: ${e.message}") }
+                    }
+                }
+                text.startsWith("/push") -> {
+                    val parsed = pushHandler.parseCommand(text)
+                    if (parsed == null) {
+                        println("[HttpApi] Push parse error: ${pushHandler.parseErrorMessage(text)}")
+                    } else {
+                        pushHandler.handle(parsed)
+                            .onSuccess { msg -> println("[HttpApi] Push handled: $msg") }
+                            .onFailure { e -> println("[HttpApi] Push error: ${e.message}") }
+                    }
+                }
+                else -> {
+                    runCatching { assistOrchestrator.handle(query = text, model = model, chatId = chatId) }
+                        .onFailure { e -> println("[HttpApi] Agent error: ${e.message}") }
+                }
             }
         }.also { it.isDaemon = true }.start()
 
