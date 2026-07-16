@@ -1,0 +1,20 @@
+name: Update Changelog
+
+on:
+  push:
+    branches:
+      - '**'
+
+jobs:
+  notify-agent:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Trigger AI changelog update
+        run: |
+          curl -X POST "http://${{ secrets.VPS_IP }}:8084/api/message" \
+            -H "Content-Type: application/json" \
+            -H "X-Api-Key: ${{ secrets.AGENT_API_KEY }}" \
+            -d '{
+              "text": "/push ${{ github.repository }} ${{ github.ref_name }} ${{ github.event.before }} ${{ github.sha }}"
+            }'
