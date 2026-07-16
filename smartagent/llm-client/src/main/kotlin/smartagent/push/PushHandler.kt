@@ -12,6 +12,10 @@ import smartagent.Message
 import smartagent.ModelConfig
 import smartagent.mcp_handler.McpSession
 import smartagent.mcp_handler.renderToolResult
+import smartagent.tools.Tool
+import smartagent.tools.github.GitHubGetDiffTool
+import smartagent.tools.github.GitHubGetPRFilesTool
+import smartagent.tools.github.GitHubGetPRTool
 import java.time.LocalDate
 
 class PushHandler(
@@ -22,7 +26,7 @@ class PushHandler(
 
     data class FileChange(val filename: String, val status: String, val additions: Int, val deletions: Int)
 
-    data class DiffResult(val files: List<FileChange>, val authors: List<String>, val commitMessages: List<String>)
+    data class DiffResult(val files: List<FileChange>, val authors: List<String>, val commitMessages: List<String>, val diffText: String = "")
 
     data class ChangelogFile(val path: String, val sha: String, val rawContent: String)
 
@@ -100,49 +104,44 @@ class PushHandler(
         return DiffResult(emptyList(), listOf("unknown"), emptyList())
     }
 
+    private fun callWithFallback(tool: Tool, owner: String, repo: String, prNumber: Int): String {
+        val result = tool.execute(mapOf("owner" to owner, "repo" to repo, "pullNumber" to prNumber))
+        if (result.isNotBlank() && !result.startsWith("[error]")) return result
+        return tool.execute(mapOf("owner" to owner, "repo" to repo, "pull_number" to prNumber))
+    }
+
     internal fun fetchPRDiff(owner: String, repo: String, prNumber: Int): DiffResult {
-        val filesResult = session.callTool(
-            "get_pull_request_files", mapOf(
-                "owner" to JsonPrimitive(owner),
-                "repo" to JsonPrimitive(repo),
-                "pullNumber" to JsonPrimitive(prNumber)
-            )
-        )
-        val files = if (filesResult != null) {
-            val text = renderToolResult(filesResult)
-            println("[Push] get_pull_request_files response (first 200): ${text.take(200)}")
-            if (text.isNotBlank() && !text.startsWith("[error]")) parsePRFilesResult(text) else emptyList()
-        } else { println("[Push] get_pull_request_files returned null"); emptyList() }
+        val filesText = callWithFallback(GitHubGetPRFilesTool(session), owner, repo, prNumber)
+        println("[Push] get_pull_request_files (${filesText.length} chars): ${filesText.take(200)}")
+        val files = if (filesText.isNotBlank() && !filesText.startsWith("[error]")) parsePRFilesResult(filesText) else emptyList()
 
-        val commitsResult = session.callTool(
-            "get_pull_request_commits", mapOf(
-                "owner" to JsonPrimitive(owner),
-                "repo" to JsonPrimitive(repo),
-                "pullNumber" to JsonPrimitive(prNumber)
-            )
-        )
-        val (authors, commitMessages) = if (commitsResult != null) {
-            val text = renderToolResult(commitsResult)
-            println("[Push] get_pull_request_commits response (first 200): ${text.take(200)}")
-            if (text.isNotBlank() && !text.startsWith("[error]")) parsePRCommits(text) else listOf("unknown") to emptyList()
-        } else { println("[Push] get_pull_request_commits returned null"); listOf("unknown") to emptyList() }
+        val prMeta = callWithFallback(GitHubGetPRTool(session), owner, repo, prNumber)
+        println("[Push] get_pull_request (${prMeta.length} chars): ${prMeta.take(200)}")
+        val author = extractAuthorFromPR(prMeta)
 
-        return DiffResult(files, authors, commitMessages)
+        val diffText = callWithFallback(GitHubGetDiffTool(session), owner, repo, prNumber)
+        println("[Push] get_pull_request_diff (${diffText.length} chars)")
+
+        return DiffResult(files, listOf(author), emptyList(), diffText)
     }
 
     internal fun fetchPRTitle(owner: String, repo: String, prNumber: Int): String? {
-        val result = session.callTool(
-            "get_pull_request", mapOf(
-                "owner" to JsonPrimitive(owner),
-                "repo" to JsonPrimitive(repo),
-                "pullNumber" to JsonPrimitive(prNumber)
-            )
-        ) ?: return null
-        val text = renderToolResult(result)
-        if (text.isBlank() || text.startsWith("[error]")) return null
+        val prMeta = callWithFallback(GitHubGetPRTool(session), owner, repo, prNumber)
+        if (prMeta.isBlank() || prMeta.startsWith("[error]")) return null
         return try {
-            Json.parseToJsonElement(text).jsonObject["title"]?.jsonPrimitive?.content
-        } catch (_: Exception) { null }
+            Json.parseToJsonElement(prMeta).jsonObject["title"]?.jsonPrimitive?.content
+        } catch (_: Exception) {
+            Regex(""""title"\s*:\s*"([^"]+)"""").find(prMeta)?.groupValues?.get(1)
+        }
+    }
+
+    internal fun extractAuthorFromPR(prMeta: String): String {
+        if (prMeta.isBlank() || prMeta.startsWith("[error]")) return "unknown"
+        return try {
+            Json.parseToJsonElement(prMeta).jsonObject["user"]?.jsonObject?.get("login")?.jsonPrimitive?.content ?: "unknown"
+        } catch (_: Exception) {
+            Regex(""""login"\s*:\s*"([^"]+)"""").find(prMeta)?.groupValues?.get(1) ?: "unknown"
+        }
     }
 
     internal fun parsePRFilesResult(text: String): List<FileChange> {
@@ -155,17 +154,6 @@ class PushHandler(
             val deletions = obj["deletions"]?.jsonPrimitive?.intOrNull ?: 0
             FileChange(filename, status, additions, deletions)
         }
-    }
-
-    internal fun parsePRCommits(text: String): Pair<List<String>, List<String>> {
-        val arr = try { Json.parseToJsonElement(text).jsonArray } catch (_: Exception) { return listOf("unknown") to emptyList() }
-        val authors = arr.mapNotNull { el ->
-            el.jsonObject["commit"]?.jsonObject?.get("author")?.jsonObject?.get("name")?.jsonPrimitive?.content
-        }.distinct().ifEmpty { listOf("unknown") }
-        val messages = arr.mapNotNull { el ->
-            el.jsonObject["commit"]?.jsonObject?.get("message")?.jsonPrimitive?.content?.lines()?.firstOrNull()
-        }.filterNot { it.startsWith("Merge pull request") }
-        return authors to messages
     }
 
     internal fun parseDiffResult(text: String): DiffResult {
@@ -204,18 +192,21 @@ class PushHandler(
 
     internal fun generateSummary(diff: DiffResult, prTitle: String?): String? {
         if (gateway == null) return null
-        val filesDesc = diff.files.take(20).joinToString("\n") { f ->
-            "- ${f.filename} (${f.status}, +${f.additions}/-${f.deletions})"
-        }
-        val commitsDesc = diff.commitMessages.take(10).joinToString("\n") { "> $it" }
         val prompt = buildString {
             if (prTitle != null) appendLine("PR: $prTitle")
-            if (filesDesc.isNotBlank()) { appendLine("Changed files:"); appendLine(filesDesc) }
-            if (commitsDesc.isNotBlank()) { appendLine("Commits:"); appendLine(commitsDesc) }
+            if (diff.diffText.isNotBlank()) {
+                appendLine("Diff:")
+                appendLine(diff.diffText.take(4000))
+            } else if (diff.files.isNotEmpty()) {
+                appendLine("Changed files:")
+                diff.files.take(20).forEach { f ->
+                    appendLine("- ${f.filename} (${f.status}, +${f.additions}/-${f.deletions})")
+                }
+            }
         }.trim()
         if (prompt.isBlank()) return null
         val messages = listOf(
-            Message("system", "You are a technical writer. Given a list of changed files and commit messages, write a concise 1-2 sentence summary in Russian describing what was done in this change. Be specific, focus on the purpose and impact. Do not list files again."),
+            Message("system", "You are a technical writer. Given a PR title and diff, write a concise 1-2 sentence summary in Russian describing what was done and why. Be specific, focus on purpose and impact. Do not list file names."),
             Message("user", prompt)
         )
         return gateway.chat(messages, model, source = "changelog")?.content?.trim()?.takeIf { it.isNotBlank() }
