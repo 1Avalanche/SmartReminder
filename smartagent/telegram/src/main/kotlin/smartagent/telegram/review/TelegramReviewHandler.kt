@@ -47,21 +47,42 @@ open class TelegramReviewHandler(
     }
 
     open fun runAndPublish(owner: String, repo: String, prNumber: Int): Result<ReviewResult> {
+        println("[Review] Starting: $owner/$repo#$prNumber")
+
         val session = McpManager.getSession("github")
             ?: return Result.failure(Exception("GitHub MCP не подключён. Добавь GITHUB_PERSONAL_ACCESS_TOKEN."))
+        println("[Review] GitHub session: connected")
 
+        println("[Review] Fetching PR context...")
         val context = runCatching {
             GitHubReviewDataProvider(session).fetchContext(owner, repo, prNumber, knowledgeService)
-        }.getOrElse { e -> return Result.failure(e) }
+        }.getOrElse { e ->
+            println("[Review] Fetch context failed: ${e.message}")
+            return Result.failure(e)
+        }
+        val fileCount = try { kotlinx.serialization.json.Json.parseToJsonElement(context.changedFiles).jsonArray.size } catch (_: Exception) { 0 }
+        println("[Review] Context fetched: \"${context.prTitle}\" ($fileCount files, diff ${context.diff.length} chars)")
 
+        println("[Review] Running LLM analysis...")
         val report = runCatching {
             ReviewAgent(gateway).review(context, ModelConfig.QWEN)
-        }.getOrElse { e -> return Result.failure(e) }
+        }.getOrElse { e ->
+            println("[Review] LLM analysis failed: ${e.message}")
+            return Result.failure(e)
+        }
+        val issuesSummary = report.issues.groupBy { it.severity }
+            .entries.joinToString(" ") { (sev, list) -> "${sev.name}:${list.size}" }
+        println("[Review] Analysis done: ${report.issues.size} issues ($issuesSummary)")
 
         val publisher = GitHubReviewPublisher(session)
+        println("[Review] Publishing to GitHub...")
         runCatching {
             publisher.publish(report)
-        }.getOrElse { e -> return Result.failure(e) }
+        }.getOrElse { e ->
+            println("[Review] Publish failed: ${e.message}")
+            return Result.failure(e)
+        }
+        println("[Review] Published. Done: $owner/$repo#$prNumber")
 
         return Result.success(ReviewResult(context, report, publisher.toMarkdown(report)))
     }
