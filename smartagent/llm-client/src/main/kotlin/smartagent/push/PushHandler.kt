@@ -27,16 +27,26 @@ class PushHandler(
     data class ChangelogFile(val path: String, val sha: String, val rawContent: String)
 
     fun handle(owner: String, repo: String, branch: String, beforeSha: String, afterSha: String, prNumber: Int? = null): Result<String> {
+        println("[Push] handle: $owner/$repo branch=$branch before=${beforeSha.take(7)} after=${afterSha.take(7)} prNumber=$prNumber")
         val diff = if (prNumber != null) {
+            println("[Push] fetching PR diff for #$prNumber")
             runCatching { fetchPRDiff(owner, repo, prNumber) }
-                .getOrElse { runCatching { fetchDiff(owner, repo, beforeSha, afterSha) }.getOrElse { DiffResult(emptyList(), listOf("unknown"), emptyList()) } }
+                .onFailure { println("[Push] fetchPRDiff failed: ${it.message}") }
+                .getOrElse {
+                    println("[Push] falling back to compare_commits")
+                    runCatching { fetchDiff(owner, repo, beforeSha, afterSha) }.getOrElse { DiffResult(emptyList(), listOf("unknown"), emptyList()) }
+                }
         } else {
+            println("[Push] no prNumber, using compare_commits")
             runCatching { fetchDiff(owner, repo, beforeSha, afterSha) }
                 .getOrElse { e -> return Result.failure(e) }
         }
+        println("[Push] diff: ${diff.files.size} files, authors=${diff.authors}, commits=${diff.commitMessages.size}")
 
         val prTitle = if (prNumber != null) runCatching { fetchPRTitle(owner, repo, prNumber) }.getOrNull() else null
-        val summary = runCatching { generateSummary(diff, prTitle) }.getOrNull()
+        println("[Push] prTitle=$prTitle")
+        val summary = runCatching { generateSummary(diff, prTitle) }.onFailure { println("[Push] generateSummary failed: ${it.message}") }.getOrNull()
+        println("[Push] summary=${summary?.take(80)}")
         val entry = buildEntry(diff, branch, prTitle, summary)
 
         val changelogFile = runCatching { findChangelog(owner, repo, branch) }.getOrNull()
@@ -100,8 +110,9 @@ class PushHandler(
         )
         val files = if (filesResult != null) {
             val text = renderToolResult(filesResult)
+            println("[Push] get_pull_request_files response (first 200): ${text.take(200)}")
             if (text.isNotBlank() && !text.startsWith("[error]")) parsePRFilesResult(text) else emptyList()
-        } else emptyList()
+        } else { println("[Push] get_pull_request_files returned null"); emptyList() }
 
         val commitsResult = session.callTool(
             "get_pull_request_commits", mapOf(
@@ -112,8 +123,9 @@ class PushHandler(
         )
         val (authors, commitMessages) = if (commitsResult != null) {
             val text = renderToolResult(commitsResult)
+            println("[Push] get_pull_request_commits response (first 200): ${text.take(200)}")
             if (text.isNotBlank() && !text.startsWith("[error]")) parsePRCommits(text) else listOf("unknown") to emptyList()
-        } else listOf("unknown") to emptyList()
+        } else { println("[Push] get_pull_request_commits returned null"); listOf("unknown") to emptyList() }
 
         return DiffResult(files, authors, commitMessages)
     }
