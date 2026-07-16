@@ -19,5 +19,5 @@ jobs:
             -H "X-Api-Key: ${{ secrets.AGENT_API_KEY }}" \
             -d '{
               "text": "/review ${{ github.repository }} ${{ github.event.pull_request.number }}",
-              "chatId": ${{ secrets.TELEGRAM_CHAT_ID }}"
+              "chatId": ${{ secrets.TELEGRAM_CHAT_ID }}
             }'

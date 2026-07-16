@@ -7,11 +7,18 @@ import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import smartagent.LLMGateway
+import smartagent.Message
+import smartagent.ModelConfig
 import smartagent.mcp_handler.McpSession
 import smartagent.mcp_handler.renderToolResult
 import java.time.LocalDate
 
-class PushHandler(private val session: McpSession) {
+class PushHandler(
+    private val session: McpSession,
+    private val gateway: LLMGateway? = null,
+    private val model: ModelConfig = ModelConfig.QWEN
+) {
 
     data class FileChange(val filename: String, val status: String, val additions: Int, val deletions: Int)
 
@@ -19,11 +26,18 @@ class PushHandler(private val session: McpSession) {
 
     data class ChangelogFile(val path: String, val sha: String, val rawContent: String)
 
-    fun handle(owner: String, repo: String, branch: String, beforeSha: String, afterSha: String): Result<String> {
-        val diff = runCatching { fetchDiff(owner, repo, beforeSha, afterSha) }
-            .getOrElse { e -> return Result.failure(e) }
+    fun handle(owner: String, repo: String, branch: String, beforeSha: String, afterSha: String, prNumber: Int? = null): Result<String> {
+        val diff = if (prNumber != null) {
+            runCatching { fetchPRDiff(owner, repo, prNumber) }
+                .getOrElse { runCatching { fetchDiff(owner, repo, beforeSha, afterSha) }.getOrElse { DiffResult(emptyList(), listOf("unknown"), emptyList()) } }
+        } else {
+            runCatching { fetchDiff(owner, repo, beforeSha, afterSha) }
+                .getOrElse { e -> return Result.failure(e) }
+        }
 
-        val entry = buildEntry(diff, branch)
+        val prTitle = if (prNumber != null) runCatching { fetchPRTitle(owner, repo, prNumber) }.getOrNull() else null
+        val summary = runCatching { generateSummary(diff, prTitle) }.getOrNull()
+        val entry = buildEntry(diff, branch, prTitle, summary)
 
         val changelogFile = runCatching { findChangelog(owner, repo, branch) }.getOrNull()
 
@@ -76,6 +90,72 @@ class PushHandler(private val session: McpSession) {
         return DiffResult(emptyList(), listOf("unknown"), emptyList())
     }
 
+    internal fun fetchPRDiff(owner: String, repo: String, prNumber: Int): DiffResult {
+        val filesResult = session.callTool(
+            "get_pull_request_files", mapOf(
+                "owner" to JsonPrimitive(owner),
+                "repo" to JsonPrimitive(repo),
+                "pullNumber" to JsonPrimitive(prNumber)
+            )
+        )
+        val files = if (filesResult != null) {
+            val text = renderToolResult(filesResult)
+            if (text.isNotBlank() && !text.startsWith("[error]")) parsePRFilesResult(text) else emptyList()
+        } else emptyList()
+
+        val commitsResult = session.callTool(
+            "get_pull_request_commits", mapOf(
+                "owner" to JsonPrimitive(owner),
+                "repo" to JsonPrimitive(repo),
+                "pullNumber" to JsonPrimitive(prNumber)
+            )
+        )
+        val (authors, commitMessages) = if (commitsResult != null) {
+            val text = renderToolResult(commitsResult)
+            if (text.isNotBlank() && !text.startsWith("[error]")) parsePRCommits(text) else listOf("unknown") to emptyList()
+        } else listOf("unknown") to emptyList()
+
+        return DiffResult(files, authors, commitMessages)
+    }
+
+    internal fun fetchPRTitle(owner: String, repo: String, prNumber: Int): String? {
+        val result = session.callTool(
+            "get_pull_request", mapOf(
+                "owner" to JsonPrimitive(owner),
+                "repo" to JsonPrimitive(repo),
+                "pullNumber" to JsonPrimitive(prNumber)
+            )
+        ) ?: return null
+        val text = renderToolResult(result)
+        if (text.isBlank() || text.startsWith("[error]")) return null
+        return try {
+            Json.parseToJsonElement(text).jsonObject["title"]?.jsonPrimitive?.content
+        } catch (_: Exception) { null }
+    }
+
+    internal fun parsePRFilesResult(text: String): List<FileChange> {
+        val arr = try { Json.parseToJsonElement(text).jsonArray } catch (_: Exception) { return emptyList() }
+        return arr.mapNotNull { el ->
+            val obj = el.jsonObject
+            val filename = obj["filename"]?.jsonPrimitive?.content ?: return@mapNotNull null
+            val status = obj["status"]?.jsonPrimitive?.content ?: "modified"
+            val additions = obj["additions"]?.jsonPrimitive?.intOrNull ?: 0
+            val deletions = obj["deletions"]?.jsonPrimitive?.intOrNull ?: 0
+            FileChange(filename, status, additions, deletions)
+        }
+    }
+
+    internal fun parsePRCommits(text: String): Pair<List<String>, List<String>> {
+        val arr = try { Json.parseToJsonElement(text).jsonArray } catch (_: Exception) { return listOf("unknown") to emptyList() }
+        val authors = arr.mapNotNull { el ->
+            el.jsonObject["commit"]?.jsonObject?.get("author")?.jsonObject?.get("name")?.jsonPrimitive?.content
+        }.distinct().ifEmpty { listOf("unknown") }
+        val messages = arr.mapNotNull { el ->
+            el.jsonObject["commit"]?.jsonObject?.get("message")?.jsonPrimitive?.content?.lines()?.firstOrNull()
+        }.filterNot { it.startsWith("Merge pull request") }
+        return authors to messages
+    }
+
     internal fun parseDiffResult(text: String): DiffResult {
         val json = try { Json.parseToJsonElement(text).jsonObject } catch (_: Exception) { return DiffResult(emptyList(), listOf("unknown"), emptyList()) }
 
@@ -110,11 +190,38 @@ class PushHandler(private val session: McpSession) {
         return DiffResult(emptyList(), authors, commitMessages)
     }
 
-    internal fun buildEntry(diff: DiffResult, branch: String): String {
+    internal fun generateSummary(diff: DiffResult, prTitle: String?): String? {
+        if (gateway == null) return null
+        val filesDesc = diff.files.take(20).joinToString("\n") { f ->
+            "- ${f.filename} (${f.status}, +${f.additions}/-${f.deletions})"
+        }
+        val commitsDesc = diff.commitMessages.take(10).joinToString("\n") { "> $it" }
+        val prompt = buildString {
+            if (prTitle != null) appendLine("PR: $prTitle")
+            if (filesDesc.isNotBlank()) { appendLine("Changed files:"); appendLine(filesDesc) }
+            if (commitsDesc.isNotBlank()) { appendLine("Commits:"); appendLine(commitsDesc) }
+        }.trim()
+        if (prompt.isBlank()) return null
+        val messages = listOf(
+            Message("system", "You are a technical writer. Given a list of changed files and commit messages, write a concise 1-2 sentence summary in Russian describing what was done in this change. Be specific, focus on the purpose and impact. Do not list files again."),
+            Message("user", prompt)
+        )
+        return gateway.chat(messages, model, source = "changelog")?.content?.trim()?.takeIf { it.isNotBlank() }
+    }
+
+    internal fun buildEntry(diff: DiffResult, branch: String, prTitle: String? = null, summary: String? = null): String {
         val date = LocalDate.now().toString()
         val authorsStr = diff.authors.joinToString(", ")
         return buildString {
             appendLine("## $date — $authorsStr (branch: $branch)")
+            if (prTitle != null) {
+                appendLine()
+                appendLine("**$prTitle**")
+            }
+            if (summary != null) {
+                appendLine()
+                appendLine(summary)
+            }
             if (diff.files.isNotEmpty()) {
                 appendLine()
                 for (f in diff.files) {

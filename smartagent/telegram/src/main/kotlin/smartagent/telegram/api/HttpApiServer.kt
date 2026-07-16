@@ -64,15 +64,19 @@ class HttpApiServer(
                     if (parsed == null) {
                         println("[HttpApi] Review parse error: ${reviewHandler.parseErrorMessage(text)}")
                     } else {
+                        println("[HttpApi] Received /review: ${parsed.owner}/${parsed.repo}#${parsed.prNumber} (chatId: $chatId)")
                         reviewHandler.runAndPublish(parsed.owner, parsed.repo, parsed.prNumber)
                             .onSuccess { result ->
                                 if (chatId != 0L) {
+                                    println("[HttpApi] Review success for chatId=$chatId, sending Telegram")
                                     val msg = reviewHandler.formatTelegramSummary(result)
                                     runCatching { sendTelegram?.invoke(chatId, msg) }
                                         .onFailure { e -> println("[HttpApi] Telegram send error: ${e.message}") }
+                                } else {
+                                    println("[HttpApi] Review success but chatId=0, Telegram not sent")
                                 }
                             }
-                            .onFailure { e -> println("[HttpApi] Review error: ${e.message}") }
+                            .onFailure { e -> println("[HttpApi] Review error: ${e.message}\n${e.stackTraceToString()}") }
                     }
                 }
                 text.startsWith("/push") -> {
