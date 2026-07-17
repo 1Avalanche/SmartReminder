@@ -36,7 +36,7 @@ class DocInitCommandHandler(
             .ifEmpty { listOf(".") }
 
         val session = McpManager.getSession("github") ?: run {
-            println("${Colors.LIGHT_YELLOW}GitHub MCP not connected. Add GITHUB_PERSONAL_ACCESS_TOKEN to local.properties and restart.${Colors.RESET}")
+            println("${Colors.LIGHT_YELLOW}GitHub MCP not connected. Add GITHUB_CORP_TOKEN (and optionally GITHUB_CORP_HOST) to local.properties and restart.${Colors.RESET}")
             return
         }
 

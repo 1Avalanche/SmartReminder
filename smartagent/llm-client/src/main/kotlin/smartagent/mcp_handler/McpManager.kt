@@ -103,21 +103,31 @@ object McpManager {
                 autoConnect = false
             )
         )
-        val githubToken = Config.localProperties["GITHUB_PERSONAL_ACCESS_TOKEN"]
-            ?: System.getenv("GITHUB_PERSONAL_ACCESS_TOKEN")
+        val githubToken = Config.localProperties["GITHUB_CORP_TOKEN"]
+            ?: System.getenv("GITHUB_CORP_TOKEN")
+        val githubHost = Config.localProperties["GITHUB_CORP_HOST"]
+            ?: System.getenv("GITHUB_CORP_HOST")
         if (githubToken != null) {
+            val githubEnv = mapOf(
+                "GITHUB_PERSONAL_ACCESS_TOKEN" to githubToken,
+                "GITHUB_HOST" to "https://github.lmru.tech"
+            )
             add(
                 McpServerConfig(
                     name = "github",
                     command = listOf(
-                        "npx",
-                        "-y",
-                        "@modelcontextprotocol/server-github"
+                        "docker",
+                        "run",
+                        "-i",
+                        "--rm",
+                        "-e",
+                        "GITHUB_PERSONAL_ACCESS_TOKEN",
+                        "-e",
+                        "GITHUB_HOST",
+                        "ghcr.io/github/github-mcp-server"
                     ),
                     workDir = cwd,
-                    env = mapOf(
-                        "GITHUB_PERSONAL_ACCESS_TOKEN" to githubToken
-                    ),
+                    env = githubEnv,
                     autoConnect = true
                 )
             )

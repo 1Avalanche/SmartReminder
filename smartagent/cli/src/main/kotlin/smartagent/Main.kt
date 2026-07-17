@@ -23,6 +23,7 @@ import smartagent.doc.RagSearcher
 import smartagent.mcp_handler.AssistRepl
 import smartagent.mcp_handler.McpManager
 import smartagent.tools.ToolRegistry
+import smartagent.tools.github.GitHubListCommitsTool
 import smartagent.tools.index.IndexInitTool
 import smartagent.tools.rag.RagSearchTool
 import java.io.File
@@ -327,6 +328,31 @@ private fun runRepl(
                     println("${Colors.DARK_GRAY}Отменено.${Colors.RESET}")
                 }
             }
+            input.startsWith("/list-commits ") -> {
+                val ownerRepo = input.removePrefix("/list-commits ").trim()
+                val parts = ownerRepo.split("/")
+                if (parts.size != 2) {
+                    println("${Colors.LIGHT_YELLOW}Usage: /list-commits <owner>/<repo>${Colors.RESET}")
+                } else {
+                    val session = McpManager.getSession("github")
+                    when {
+                        session == null ->
+                            println("${Colors.LIGHT_YELLOW}GitHub MCP не подключён. Запусти /mcp github init или добавь GITHUB_CORP_TOKEN и перезапусти.${Colors.RESET}")
+                        !session.isConnected ->
+                            println("${Colors.LIGHT_YELLOW}GitHub MCP сессия есть, но не подключена (state=${session.state}). Запусти /mcp github init.${Colors.RESET}")
+                        else -> {
+                            println("${Colors.DARK_GRAY}[MCP] calling list_commits for ${parts[0]}/${parts[1]}...${Colors.RESET}")
+                            val result = GitHubListCommitsTool(session).execute(mapOf("owner" to parts[0], "repo" to parts[1]))
+                            if (result.isBlank()) {
+                                println("${Colors.LIGHT_YELLOW}Пустой ответ. Проверь лог: smartagent/cli/network.log${Colors.RESET}")
+                            } else {
+                                println(result)
+                            }
+                        }
+                    }
+                }
+            }
+            input == "/list-commits" -> println("${Colors.LIGHT_YELLOW}Usage: /list-commits <owner>/<repo>${Colors.RESET}")
             // MCP commands — available in any mode
             input == "/mcp" || input.startsWith("/mcp ") -> AssistRepl.handle(input.removePrefix("/"))
             input.startsWith("/") -> println("${Colors.LIGHT_YELLOW}Unknown command: $input${Colors.RESET}")

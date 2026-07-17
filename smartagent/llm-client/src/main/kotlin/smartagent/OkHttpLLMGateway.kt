@@ -18,12 +18,13 @@ class OkHttpLLMGateway(
 
     override fun chat(messages: List<Message>, model: ModelConfig, source: String, options: OllamaOptions?): LLMGateway.Response? {
         val apiKey = Config.apiKey(model) ?: return null
+        val resolvedUrl = Config.apiUrl(model)
         val cleanMessages = messages.map { msg ->
             msg.copy(content = normalizer.normalize(msg.content))
         }
         val requestBody = json.encodeToString(ChatRequest(model.apiModelId, cleanMessages, options = options))
         val request = Request.Builder()
-            .url(model.url)
+            .url(resolvedUrl)
             .addHeader("Authorization", "Bearer $apiKey")
             .addHeader("Content-Type", "application/json")
             .post(requestBody.toRequestBody("application/json".toMediaType()))
@@ -37,7 +38,7 @@ class OkHttpLLMGateway(
             val chatResponse = runCatching { json.decodeFromString<ChatResponse>(body) }.getOrNull()
             NetworkLogger.logRequest(
                 source = source,
-                url = model.url,
+                url = resolvedUrl,
                 reqHeaders = request.headers.toMap(),
                 reqBody = requestBody,
                 statusCode = response.code,

@@ -50,7 +50,7 @@ open class TelegramReviewHandler(
         println("[Review] Starting: $owner/$repo#$prNumber")
 
         val session = McpManager.getSession("github")
-            ?: return Result.failure(Exception("GitHub MCP не подключён. Добавь GITHUB_PERSONAL_ACCESS_TOKEN."))
+            ?: return Result.failure(Exception("GitHub MCP не подключён. Добавь GITHUB_CORP_TOKEN (и при необходимости GITHUB_CORP_HOST)."))
         println("[Review] GitHub session: connected")
 
         println("[Review] Fetching PR context...")

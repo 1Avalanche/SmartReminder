@@ -40,6 +40,11 @@ class McpClient(private val transport: McpTransport) : AutoCloseable {
         transport.send(JsonRpcSerializer.buildRequest(id, "tools/list"))
         val response = waitForResponse(id) ?: return emptyList()
 
+        NetworkLogger.logEvent(
+            source = "[MCP] tools/list",
+            message = "raw response: $response"
+        )
+
         val tools = response["result"]
             ?.jsonObject?.get("tools")
             ?.jsonArray ?: return emptyList()

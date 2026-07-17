@@ -42,11 +42,12 @@ class GitCloneDocumentSource(
     }
 
     private fun clone(dir: File) {
-        val token = Config.localProperties["GITHUB_PERSONAL_ACCESS_TOKEN"]
+        val token = Config.localProperties["GITHUB_CORP_TOKEN"] ?: System.getenv("GITHUB_CORP_TOKEN")
+        val host = Config.localProperties["GITHUB_CORP_HOST"] ?: System.getenv("GITHUB_CORP_HOST") ?: "github.com"
         val url = if (token != null) {
-            "https://$token@github.com/$owner/$repo.git"
+            "https://$token@$host/$owner/$repo.git"
         } else {
-            "https://github.com/$owner/$repo.git"
+            "https://$host/$owner/$repo.git"
         }
         val process = ProcessBuilder("git", "clone", "--depth", "1", "--branch", branch, url, dir.absolutePath)
             .redirectErrorStream(true)

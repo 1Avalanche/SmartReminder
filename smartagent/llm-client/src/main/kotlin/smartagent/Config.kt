@@ -39,6 +39,13 @@ object Config {
             ?: System.getenv(model.apiKeyProperty)
             ?: System.getenv(model.apiKeyProperty.replace("_STUDY_", "_"))
 
+    fun apiUrl(model: ModelConfig): String =
+        if (model.urlProperty.isNotEmpty())
+            localProperties[model.urlProperty]
+                ?: System.getenv(model.urlProperty)
+                ?: model.url
+        else model.url
+
     fun hasAnyKey(): Boolean = ModelConfig.entries.any { apiKey(it) != null }
 
     fun saveKey(property: String, value: String) {

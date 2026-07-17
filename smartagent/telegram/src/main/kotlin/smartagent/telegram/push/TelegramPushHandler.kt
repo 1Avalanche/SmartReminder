@@ -46,7 +46,7 @@ class TelegramPushHandler(
 
     fun handle(push: ParsedPush): Result<String> {
         val session = McpManager.getSession("github")
-            ?: return Result.failure(Exception("GitHub MCP не подключён. Добавь GITHUB_PERSONAL_ACCESS_TOKEN."))
+            ?: return Result.failure(Exception("GitHub MCP не подключён. Добавь GITHUB_CORP_TOKEN (и при необходимости GITHUB_CORP_HOST)."))
         return PushHandler(session, gateway, model).handle(push.owner, push.repo, push.branch, push.beforeSha, push.afterSha, push.prNumber)
     }
 }

@@ -99,7 +99,7 @@ class TelegramBotRunner(
         val paths = args.drop(1).filter { it != "--branch" && it != branch }.ifEmpty { listOf(".") }
 
         val session = McpManager.getSession("github")
-            ?: return "GitHub MCP не подключён. Добавь GITHUB_PERSONAL_ACCESS_TOKEN и перезапусти бота."
+            ?: return "GitHub MCP не подключён. Добавь GITHUB_CORP_TOKEN (и при необходимости GITHUB_CORP_HOST) и перезапусти бота."
         ToolRegistry.register(GitHubGetFileContentsTool(session))
         ToolRegistry.register(GitHubSearchCodeTool(session))
         ToolRegistry.register(GitHubListCommitsTool(session))

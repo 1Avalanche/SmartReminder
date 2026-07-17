@@ -34,7 +34,7 @@ internal class ChatClient(private val session: ChatSession) {
         saveToHistory: Boolean = true
     ): String? {
         val isChatMode = session.currentMode == AgentMode.CHAT
-        val effectiveModel = if (isChatMode) ModelConfig.GEMMA_LOCAL else session.currentModel
+        val effectiveModel = session.currentModel
 
         val apiKey = Config.apiKey(effectiveModel)
         if (apiKey.isNullOrBlank()) {
@@ -82,7 +82,7 @@ internal class ChatClient(private val session: ChatSession) {
                     max_tokens = requestMaxTokens,
                     options = requestOptions
                 ))
-                val request = buildRequest(requestBody, apiKey, effectiveModel.url)
+                val request = buildRequest(requestBody, apiKey, Config.apiUrl(effectiveModel))
                 val call = http.newCall(request)
                 activeCall.set(call)
                 val response = call.execute()
@@ -94,12 +94,12 @@ internal class ChatClient(private val session: ChatSession) {
                 if (!response.isSuccessful) {
                     if (response.code == 400 && !retried && isContextOverflow(body)) {
                         retried = true
-                        NetworkLogger.log(effectiveModel.url, reqHeaders, requestBody, response.code, resHeaders, body, "[MAIN_AGENT]")
+                        NetworkLogger.log(Config.apiUrl(effectiveModel), reqHeaders, requestBody, response.code, resHeaders, body, "[MAIN_AGENT]")
                         SummaryAgent(session).forceCompress()
                         continue
                     }
                     spinner.stop()
-                    NetworkLogger.log(effectiveModel.url, reqHeaders, requestBody, response.code, resHeaders, body, "[MAIN_AGENT]")
+                    NetworkLogger.log(Config.apiUrl(effectiveModel), reqHeaders, requestBody, response.code, resHeaders, body, "[MAIN_AGENT]")
                     println("Error ${response.code}: ${body.ifEmpty { "Unknown error" }}")
                     if (saveToHistory) session.addLogEntry(LogEntry(text, requestBody, body.ifEmpty { "HTTP ${response.code}" }))
                     return null
@@ -111,14 +111,14 @@ internal class ChatClient(private val session: ChatSession) {
 
                 if (reply.isBlank()) {
                     spinner.stop()
-                    NetworkLogger.log(effectiveModel.url, reqHeaders, requestBody, response.code, resHeaders, body, "[MAIN_AGENT]")
+                    NetworkLogger.log(Config.apiUrl(effectiveModel), reqHeaders, requestBody, response.code, resHeaders, body, "[MAIN_AGENT]")
                     println("Warning: empty response from the model")
                     if (saveToHistory) session.addLogEntry(LogEntry(text, requestBody, body))
                     return null
                 } else {
                     val (displayText, structured) = session.parseResponse(reply)
                     val responseForLog = json.encodeToString(structured ?: StructuredResponse(content = reply))
-                    NetworkLogger.log(effectiveModel.url, reqHeaders, requestBody, response.code, resHeaders, body, "[MAIN_AGENT]")
+                    NetworkLogger.log(Config.apiUrl(effectiveModel), reqHeaders, requestBody, response.code, resHeaders, body, "[MAIN_AGENT]")
                     spinner.stop()
                     println()
                     println()
@@ -148,7 +148,7 @@ internal class ChatClient(private val session: ChatSession) {
                 println("\n${Colors.LIGHT_YELLOW}Отменено.${Colors.RESET}")
                 return null
             }
-            val url = if (session.currentMode == AgentMode.CHAT) ModelConfig.GEMMA_LOCAL.url else session.currentModel.url
+            val url = Config.apiUrl(session.currentModel)
             NetworkLogger.log(url, emptyMap(), requestBody, 0, emptyMap(), "Error: ${e.message}", "[MAIN_AGENT]")
             println("Error: ${e.message}")
             if (saveToHistory) session.addLogEntry(LogEntry(text, requestBody, "Error: ${e.message}"))

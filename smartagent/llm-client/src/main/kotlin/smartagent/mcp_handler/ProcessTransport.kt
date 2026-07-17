@@ -36,13 +36,14 @@ class ProcessTransport(command: List<String>, workDir: String, env: Map<String, 
             }
         }
 
-        // Buffer server stderr; caller drains it synchronously via drainStderr()
+        // Buffer server stderr; also stream to NetworkLogger for live diagnostics
         thread("mcp-stderr") {
             BufferedReader(InputStreamReader(process.errorStream, Charsets.UTF_8)).use { reader ->
                 try {
                     while (true) {
                         val line = reader.readLine() ?: break
                         stderrQueue.put(line)
+                        smartagent.NetworkLogger.logEvent("[MCP-stderr]", line)
                     }
                 } catch (e: Exception) { /* stream closed */ }
             }
