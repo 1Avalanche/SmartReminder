@@ -110,7 +110,7 @@ object McpManager {
         if (githubToken != null) {
             val githubEnv = mapOf(
                 "GITHUB_PERSONAL_ACCESS_TOKEN" to githubToken,
-                "GITHUB_HOST" to "https://github.lmru.tech"
+                "GITHUB_HOST" to (githubHost ?: "https://github.lmru.tech")
             )
             add(
                 McpServerConfig(

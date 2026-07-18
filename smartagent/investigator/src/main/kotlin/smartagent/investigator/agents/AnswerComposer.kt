@@ -12,9 +12,12 @@ class AnswerComposer(private val gateway: LLMGateway, private val model: ModelCo
         query: String,
         uiResults: List<UiSearchResult>,
         channelOutputs: List<Pair<UiSearchResult, ChannelAgentOutput>>,
-        history: List<Message> = emptyList()
+        history: List<Message> = emptyList(),
+        uncertaintyNote: String? = null
     ): String {
         val context = buildContext(uiResults, channelOutputs)
+        val uncertaintyBlock = if (uncertaintyNote != null)
+            "\n⚠️ Предупреждение от системы проверки: $uncertaintyNote\n" else ""
         val messages = mutableListOf<Message>()
         messages += Message("system", SYSTEM_PROMPT)
         messages += history
@@ -23,7 +26,7 @@ class AnswerComposer(private val gateway: LLMGateway, private val model: ModelCo
 
 Найденные данные:
 $context
-
+$uncertaintyBlock
 Сформируй финальный ответ пользователю.
 """.trimIndent())
 
@@ -85,7 +88,7 @@ $context
                 is ChannelAgentOutput.Result -> {
                     val r = ch.data
                     val source = if (!r.transformation.isNullOrBlank())
-                        "из операции `${r.transformation}` над полями ${r.sourceFields.joinToString(", ")}"
+                        "из операции `${r.transformation}`"
                     else
                         "из полей ${r.sourceFields.joinToString(", ")}"
                     appendLine("Данные для \"${ui.displayText}\" берутся из ${ui.apiMethod} поля ${ui.apiField}. " +
@@ -111,14 +114,19 @@ $context
 Получаем из канала `<алиас_канала>`, бэкенд `<host><basepath>`.
 
 Если transformation == null: из поля `<source_field>`
-Если transformation != null: из операции `<transformation>` над полями `<source_fields>`
+Если transformation != null: из операции `<transformation>`
 
 Примеры:
 - "из поля `body.price`"
-- "из операции `body.a + body.b + body.c` над полями body.a, body.b, body.c"
-- "из условия `body.x ?? body.y` над полями body.x, body.y"
+- "из операции `body.a + body.b + body.c`"
+- "из условия `body.x ?? body.y`"
 
 Если данные пришли из нескольких каналов/бэкендов — опиши каждый отдельно, пронумеруй.
+
+Если запрос содержал имя товара, объекта или пример — явно укажи в начале ответа как интерпретировал вопрос:
+"По запросу о [контекст из запроса] найдено поле «[displayText]»."
+
+Если в данных есть предупреждение системы проверки — включи его в ответ перед основными данными.
 
 Если в данных есть ошибки поиска — сообщи о них в конце ответа.
 

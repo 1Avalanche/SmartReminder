@@ -27,8 +27,27 @@ fun main() {
 
     val minimax = ModelConfig.MINIMAX
     if (Config.apiKey(minimax) == null) {
-        println("${CYAN}Не найден GPU_STACK_API_KEY в local.properties$RESET")
+        println("${CYAN}Не найден GPU_STACK_API_KEY в .properties$RESET")
         return
+    }
+    if (Config.apiUrl(minimax).isBlank()) {
+        println("${CYAN}Не найден GPU_STACK_URL в .properties$RESET")
+        return
+    }
+
+    when (DockerChecker.check()) {
+        DockerChecker.Result.NotInstalled -> {
+            println("${CYAN}Docker не установлен.$RESET")
+            println("Установите Docker Desktop: https://docs.docker.com/desktop/mac/install/")
+            println("После установки запустите Docker Desktop и повторите запуск.")
+            return
+        }
+        DockerChecker.Result.NotRunning -> {
+            println("${CYAN}Docker установлен, но демон не запущен.$RESET")
+            println("Запустите Docker Desktop и повторите.")
+            return
+        }
+        DockerChecker.Result.Ok -> Unit
     }
 
     println("${CYAN}Подключение к GitHub MCP...$RESET")
@@ -134,14 +153,14 @@ private fun processResponse(
 ): ReplState {
     return when (response) {
         is OrchestratorResponse.FinalAnswer -> {
-            println(response.text)
+            if (response.isError) println(response.text) else println("✅ ${response.text}")
             println()
             session.clear()
             session.addExchange(query, response.text)
             ReplState.Idle
         }
         is OrchestratorResponse.Rejected -> {
-            println("$YELLOW${response.reason}$RESET")
+            println("$YELLOW🚫 ${response.reason}$RESET")
             println()
             ReplState.Idle
         }

@@ -17,6 +17,7 @@ captures
 !*.xcworkspace/contents.xcworkspacedata
 **/xcshareddata/WorkspaceSettings.xcsettings
 node_modules/
+smartagent/investigator/.properties
 smartagent/cli/network.log
 smartagent/cli/tokens.json
 smartagent/cli/context.json

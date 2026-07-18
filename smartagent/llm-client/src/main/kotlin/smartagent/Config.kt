@@ -18,7 +18,8 @@ object Config {
 
     val localProperties: Map<String, String> by lazy {
         val props = mutableMapOf<String, String>()
-        val file = listOf(
+        val file = listOfNotNull(
+            System.getProperty("investigator.config"),
             "local.properties",
             "../local.properties",
             configFile.absolutePath

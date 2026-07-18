@@ -27,7 +27,11 @@ data class InvestigatorConfig(
         }
 
         private fun loadChannels(): List<ChannelMapping> {
-            val candidates = listOf("channels.json", "../channels.json")
+            val candidates = listOfNotNull(
+                System.getProperty("investigator.channels"),
+                "channels.json",
+                "../channels.json"
+            )
             val file = candidates.map(::File).firstOrNull { it.exists() }
                 ?: return emptyList()
 

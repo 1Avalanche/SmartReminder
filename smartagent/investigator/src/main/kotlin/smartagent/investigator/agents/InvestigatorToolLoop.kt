@@ -50,6 +50,7 @@ class InvestigatorToolLoop(
         messages += Message("user", query)
 
         val accessedFiles = mutableListOf<String>()
+        val fileCache = FileContentCache()
 
         repeat(maxIterations) {
             val response = gateway.chat(messages, model, "investigator-tool")
@@ -70,10 +71,20 @@ class InvestigatorToolLoop(
                         return@repeat
                     }
 
+                    var cachedFilePath: String? = null
                     if (toolName == "get_file_contents") {
                         val filePath = decision.arguments["path"]?.jsonPrimitive?.content
                             ?: decision.arguments["file_path"]?.jsonPrimitive?.content
-                        if (filePath != null) accessedFiles += filePath
+                        if (filePath != null) {
+                            accessedFiles += filePath
+                            cachedFilePath = filePath
+                            val cached = fileCache.get(filePath)
+                            if (cached != null) {
+                                System.err.println("[investigator] File cache hit: $filePath")
+                                messages += Message("user", "Результат $toolName:\n$cached")
+                                return@repeat
+                            }
+                        }
                     }
 
                     val callResult = runCatching {
@@ -81,8 +92,11 @@ class InvestigatorToolLoop(
                     }
 
                     when {
-                        callResult.isSuccess && callResult.getOrNull() != null ->
-                            messages += Message("user", "Результат $toolName:\n${callResult.getOrNull()}")
+                        callResult.isSuccess && callResult.getOrNull() != null -> {
+                            val content = callResult.getOrNull()!!
+                            if (cachedFilePath != null) fileCache.put(cachedFilePath, content)
+                            messages += Message("user", "Результат $toolName:\n$content")
+                        }
                         callResult.isSuccess ->
                             messages += Message("user", "Инструмент $toolName не вернул результатов.")
                         else -> {
