@@ -22,7 +22,7 @@ class OkHttpLLMGateway(
         val cleanMessages = messages.map { msg ->
             msg.copy(content = normalizer.normalize(msg.content))
         }
-        val requestBody = json.encodeToString(ChatRequest(model.apiModelId, cleanMessages, options = options))
+        val requestBody = json.encodeToString(ChatRequest(model.apiModelId, cleanMessages, temperature = model.temperature, options = options))
         val request = Request.Builder()
             .url(resolvedUrl)
             .addHeader("Authorization", "Bearer $apiKey")

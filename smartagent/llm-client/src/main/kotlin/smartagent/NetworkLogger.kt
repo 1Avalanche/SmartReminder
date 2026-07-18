@@ -18,7 +18,7 @@ object NetworkLogger {
     private val timestampFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
 
     val logFile: File by lazy {
-        val path = listOf("cli/network.log", "network.log")
+        val path = listOf("investigator/network.log", "cli/network.log", "network.log")
             .firstOrNull { File(it).parentFile?.exists() ?: false }
             ?: "network.log"
         File(path)

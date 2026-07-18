@@ -60,7 +60,8 @@ enum class ModelConfig(
     val contextWindow: Int,
     val aliases: List<String> = emptyList(),
     val isLocal: Boolean = false,
-    val urlProperty: String = ""
+    val urlProperty: String = "",
+    val temperature: Double? = null
 ) {
     DEEPSEEK(
         shortName = "deepseek",
@@ -131,12 +132,13 @@ enum class ModelConfig(
     MINIMAX(
         shortName = "minimax",
         description = "MiniMax M2.7 — корпоративный GPU Stack",
-        apiModelId = "minimax-m2.7",
+        apiModelId = "qwen3.5-397b-a17b",
         apiKeyProperty = "GPU_STACK_API_KEY",
         url = "",
         contextWindow = 1_000_000,
         aliases = listOf("minimax-m2.7"),
-        urlProperty = "GPU_STACK_URL"
+        urlProperty = "GPU_STACK_URL",
+        temperature = 0.1
     );
 
     companion object {

@@ -9,6 +9,11 @@ import kotlinx.serialization.json.jsonPrimitive
 
 private val prettyJson = Json { prettyPrint = true }
 
+private val BASE64_BLOB = Regex("""[A-Za-z0-9+/\n]{200,}={0,2}""")
+
+private fun stripBase64(text: String): String =
+    BASE64_BLOB.replace(text) { "[base64, ${it.value.replace("\n", "").length} байт, пропущено]" }
+
 /**
  * Renders a MCP tools/call result element as human-readable text.
  *
@@ -19,6 +24,7 @@ private val prettyJson = Json { prettyPrint = true }
  *
  * Text that is itself valid JSON (object/array) is pretty-printed.
  * isError=true is indicated with "[error]" prefix.
+ * Base64 blobs (200+ chars) are replaced with a size placeholder.
  */
 fun renderToolResult(result: JsonElement): String {
     val obj = result.jsonObject
@@ -27,8 +33,8 @@ fun renderToolResult(result: JsonElement): String {
     if (contentArray == null) {
         // Non-standard format: server returns {"text": "..."} directly
         val directText = obj["text"]?.jsonPrimitive?.content
-        if (directText != null) return tryPrettyJson(directText)
-        return prettyJson.encodeToString(JsonElement.serializer(), result)
+        if (directText != null) return stripBase64(tryPrettyJson(directText))
+        return stripBase64(prettyJson.encodeToString(JsonElement.serializer(), result))
     }
 
     if (contentArray.isEmpty()) return ""
@@ -39,11 +45,13 @@ fun renderToolResult(result: JsonElement): String {
     val parts = contentArray.map { item ->
         val itemObj = item.jsonObject
         val type = itemObj["type"]?.jsonPrimitive?.content
-        if (type == "text") {
-            val text = itemObj["text"]?.jsonPrimitive?.content ?: ""
-            prefix + tryPrettyJson(text)
-        } else {
-            prettyJson.encodeToString(JsonElement.serializer(), item)
+        when {
+            type == "text" -> {
+                val text = itemObj["text"]?.jsonPrimitive?.content ?: ""
+                prefix + stripBase64(tryPrettyJson(text))
+            }
+            type == "image" -> prefix + "[бинарное содержимое, пропущено]"
+            else -> stripBase64(prettyJson.encodeToString(JsonElement.serializer(), item))
         }
     }
 

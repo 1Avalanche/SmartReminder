@@ -129,17 +129,48 @@ class ToolResultRendererTest {
     }
 
     @Test
-    fun `non-text content type falls back to pretty JSON of item`() {
+    fun `image content type returns placeholder`() {
         val result = buildJsonObject {
             put("content", buildJsonArray {
                 add(buildJsonObject {
                     put("type", "image")
-                    put("data", "base64==")
+                    put("data", "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJ")
                     put("mimeType", "image/png")
                 })
             })
         }
         val rendered = renderToolResult(result)
-        assertTrue(rendered.contains("\"image\""))
+        assertTrue(rendered.contains("бинарное содержимое, пропущено"), "expected placeholder, got: $rendered")
+    }
+
+    @Test
+    fun `long base64 string in text is replaced with size placeholder`() {
+        val base64 = "A".repeat(300)
+        val result = textContent(base64)
+        val rendered = renderToolResult(result)
+        assertTrue(rendered.contains("байт, пропущено"), "expected base64 placeholder, got: $rendered")
+        assertTrue(!rendered.contains("A".repeat(100)), "raw base64 must not be present")
+    }
+
+    @Test
+    fun `short base64-like string under threshold is kept as-is`() {
+        val short = "SGVsbG8gV29ybGQ="  // "Hello World" in base64, 20 chars
+        val result = textContent(short)
+        assertEquals(short, renderToolResult(result))
+    }
+
+    @Test
+    fun `non-text content type falls back to pretty JSON of item with base64 stripped`() {
+        val base64 = "B".repeat(300)
+        val result = buildJsonObject {
+            put("content", buildJsonArray {
+                add(buildJsonObject {
+                    put("type", "binary")
+                    put("data", base64)
+                })
+            })
+        }
+        val rendered = renderToolResult(result)
+        assertTrue(rendered.contains("байт, пропущено"), "expected base64 stripped in fallback, got: $rendered")
     }
 }

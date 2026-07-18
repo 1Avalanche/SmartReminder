@@ -71,3 +71,27 @@ echo "  $CMD_NAME --repo /path/to/repo   # start with repo context"
 echo ""
 echo "API keys: set DEEPSEEK_STUDY_API_KEY / OPENROUTER_STUDY_API_KEY in environment"
 echo "or place local.properties in the working directory."
+
+# --- investigator ---
+echo ""
+echo "Building investigator JAR..."
+cd "$REPO_ROOT"
+./gradlew :smartagent:investigator:shadowJar --console=plain -q
+
+INV_SRC_JAR="$REPO_ROOT/smartagent/investigator/build/libs/investigator.jar"
+if [ ! -f "$INV_SRC_JAR" ]; then
+  echo "Warning: investigator JAR not found at $INV_SRC_JAR, skipping." >&2
+else
+  INV_INSTALL_DIR="$HOME/.local/share/investigator"
+  mkdir -p "$INV_INSTALL_DIR"
+  cp "$INV_SRC_JAR" "$INV_INSTALL_DIR/investigator.jar"
+
+  cat > "$BIN_DIR/investigator" << 'INVEOF'
+#!/usr/bin/env bash
+exec java -jar "$HOME/.local/share/investigator/investigator.jar" "$@"
+INVEOF
+  chmod +x "$BIN_DIR/investigator"
+
+  echo "Installed: $BIN_DIR/investigator"
+  echo "Usage: investigator   (requires UI_REPO, INVASTIGATOR_OWNERR, GITHUB_CORP_TOKEN in local.properties)"
+fi

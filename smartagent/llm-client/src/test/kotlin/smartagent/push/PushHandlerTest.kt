@@ -41,8 +41,8 @@ class PushHandlerTest {
         assertEquals(2, result.files[0].deletions)
         assertEquals("src/Bar.kt", result.files[1].filename)
         assertEquals("added", result.files[1].status)
-        assertEquals("Jane Doe", result.authorName)
-        assertEquals("fix: auth bug", result.commitMessage)
+        assertEquals("Jane Doe", result.authors.first())
+        assertEquals("fix: auth bug", result.commitMessages.first())
     }
 
     @Test
@@ -51,7 +51,7 @@ class PushHandlerTest {
         val handler = PushHandler(fakeMcp.session)
         val result = handler.parseDiffResult("not-json")
         assertEquals(0, result.files.size)
-        assertEquals("unknown", result.authorName)
+        assertEquals("unknown", result.authors.first())
     }
 
     @Test
@@ -61,7 +61,7 @@ class PushHandlerTest {
         val handler = PushHandler(fakeMcp.session)
         val result = handler.parseDiffResult(json)
         assertEquals(1, result.files.size)
-        assertEquals("unknown", result.authorName)
+        assertEquals("unknown", result.authors.first())
     }
 
     // --- parseCommitsResult ---
@@ -81,8 +81,8 @@ class PushHandlerTest {
         val fakeMcp = FakePushMcpSession()
         val handler = PushHandler(fakeMcp.session)
         val result = handler.parseCommitsResult(json)
-        assertEquals("John Smith", result.authorName)
-        assertEquals("chore: cleanup", result.commitMessage)
+        assertEquals("John Smith", result.authors.first())
+        assertEquals("chore: cleanup", result.commitMessages.first())
         assertEquals(0, result.files.size)
     }
 
@@ -94,8 +94,8 @@ class PushHandlerTest {
         val handler = PushHandler(fakeMcp.session)
         val diff = PushHandler.DiffResult(
             files = listOf(PushHandler.FileChange("Foo.kt", "modified", 3, 1)),
-            authorName = "Alice",
-            commitMessage = "refactor: cleanup"
+            authors = listOf("Alice"),
+            commitMessages = listOf("refactor: cleanup")
         )
         val entry = handler.buildEntry(diff, "main")
         val today = LocalDate.now().toString()
@@ -113,8 +113,8 @@ class PushHandlerTest {
                 PushHandler.FileChange("Foo.kt", "modified", 5, 2),
                 PushHandler.FileChange("Bar.kt", "added", 10, 0)
             ),
-            authorName = "Bob",
-            commitMessage = "feat: add bar"
+            authors = listOf("Bob"),
+            commitMessages = listOf("feat: add bar")
         )
         val entry = handler.buildEntry(diff, "feature/x")
         assertContains(entry, "Foo.kt")
@@ -129,7 +129,7 @@ class PushHandlerTest {
     fun `buildEntry handles no files gracefully`() {
         val fakeMcp = FakePushMcpSession()
         val handler = PushHandler(fakeMcp.session)
-        val diff = PushHandler.DiffResult(emptyList(), "Dev", "init")
+        val diff = PushHandler.DiffResult(emptyList(), listOf("Dev"), listOf("init"))
         val entry = handler.buildEntry(diff, "main")
         assertContains(entry, "Dev")
         assertContains(entry, "init")
