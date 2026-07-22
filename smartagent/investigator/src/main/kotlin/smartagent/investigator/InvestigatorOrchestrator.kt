@@ -12,6 +12,7 @@ import smartagent.investigator.model.ChannelAgentOutput
 import smartagent.investigator.model.QueryType
 import smartagent.investigator.model.UiAgentOutput
 import smartagent.investigator.model.UiSearchResult
+import smartagent.investigator.model.displayName
 import smartagent.investigator.model.resolveRepo
 import smartagent.mcp_handler.McpSession
 
@@ -64,7 +65,7 @@ class InvestigatorOrchestrator(
     ): OrchestratorResponse {
         val alias = queryType.channelAlias
         if (alias == null) {
-            val allAliases = config.channels.mapNotNull { it.alias.firstOrNull() }.distinct()
+            val allAliases = config.channels.map { it.primaryName }.distinct()
             return OrchestratorResponse.NeedsChannelSelection(
                 availableChannels = allAliases,
                 pendingQuery = queryType.searchQuery
@@ -123,7 +124,7 @@ class InvestigatorOrchestrator(
             is ChannelAgentOutput.Result -> {
                 val r = output.data
                 buildString {
-                    appendLine("Канал: $channelAlias (${r.channelRepo})")
+                    appendLine("Канал: ${config.channels.displayName(channelAlias)} (${r.channelRepo})")
                     appendLine("Дефиниция: ${r.definitionPath}")
                     appendLine("Бэкенд: ${r.backendHost}${r.backendBasePath} (алиас: ${r.backendAlias})")
                     appendLine("Поля: ${r.sourceFields.joinToString(", ")}")
@@ -135,7 +136,7 @@ class InvestigatorOrchestrator(
             is ChannelAgentOutput.NoBackend ->
                 "⚠️ Не нашлось бэкенд источника в канале ${output.channel}."
             is ChannelAgentOutput.SearchError ->
-                "⚠️ Ошибка при поиске в канале $channelAlias: ${output.cause}"
+                "⚠️ Ошибка при поиске в канале ${config.channels.displayName(channelAlias)}: ${output.cause}"
         }
 
     private fun handleDataFlowQuery(query: String, session: InvestigatorSession): OrchestratorResponse {
@@ -198,7 +199,7 @@ class InvestigatorOrchestrator(
                             "Не удалось найти репозиторий для канала «${ui.channelAlias}» в channels.json"
                         )
                     } else {
-                        println("${GRAY}Ищу в канале ${ui.channelAlias}...$RESET")
+                        println("${GRAY}Ищу в канале ${config.channels.displayName(ui.channelAlias)}...$RESET")
                         val chOutput = channelSearchAgent.search(
                             ui, channelRepo, emptyList(),
                             definitionHint = session.channelFileHints[ui.channelAlias]
@@ -252,7 +253,7 @@ class InvestigatorOrchestrator(
                     "Не удалось найти репозиторий для канала «${ui.channelAlias}» в channels.json"
                 )
             } else {
-                println("Ищу в канале ${ui.channelAlias}...")
+                println("Ищу в канале ${config.channels.displayName(ui.channelAlias)}...")
                 val chOutput = channelSearchAgent.search(
                     ui, channelRepo, emptyList(),
                     definitionHint = session.channelFileHints[ui.channelAlias]

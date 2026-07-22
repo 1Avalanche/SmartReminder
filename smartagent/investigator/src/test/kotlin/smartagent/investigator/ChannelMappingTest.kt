@@ -1,6 +1,7 @@
 package smartagent.investigator
 
 import smartagent.investigator.model.ChannelMapping
+import smartagent.investigator.model.displayName
 import smartagent.investigator.model.resolveRepo
 import org.junit.Test
 import kotlin.test.assertEquals
@@ -10,10 +11,12 @@ class ChannelMappingTest {
 
     private val mappings = listOf(
         ChannelMapping(
+            primaryName = "peach",
             alias = listOf("productsearch", "peach", "peachinternal", "peachorchestrator"),
             repoName = "peach-repo"
         ),
         ChannelMapping(
+            primaryName = "mango",
             alias = listOf("mango", "mangointernal"),
             repoName = "mango-repo"
         )
@@ -52,5 +55,20 @@ class ChannelMappingTest {
     @Test
     fun `resolves productsearch alias`() {
         assertEquals("peach-repo", mappings.resolveRepo("productsearch"))
+    }
+
+    @Test
+    fun `displayName returns primaryName for known alias`() {
+        assertEquals("peach", mappings.displayName("peachorchestrator"))
+    }
+
+    @Test
+    fun `displayName returns primaryName case-insensitive`() {
+        assertEquals("mango", mappings.displayName("MANGOINTERNAL"))
+    }
+
+    @Test
+    fun `displayName falls back to alias for unknown`() {
+        assertEquals("unknown", mappings.displayName("unknown"))
     }
 }
