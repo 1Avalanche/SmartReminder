@@ -1,7 +1,5 @@
 package smartagent
 
-import java.time.LocalDateTime
-import java.time.format.DateTimeFormatter
 import kotlinx.serialization.EncodeDefault
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.SerialName
@@ -53,40 +51,6 @@ data class ChatResponse(val choices: List<Choice>, val usage: Usage? = null)
 data class StructuredResponse(
     val content: String = ""
 )
-
-@Serializable
-data class TokenEntry(
-    val request: Int,
-    val prompt: Int,
-    val completion: Int,
-    val total: Int
-)
-
-val CONTEXT_FORMAT_INSTRUCTION = """
-В ответ всегда возвращай только JSON без пояснений и без markdown-разметки с полями:
-- content (обязательно) — ответ, который нужно отобразить пользователю.
-""".trimIndent()
-
-@Serializable
-data class ContextFile(
-    val history: List<LogEntry> = emptyList(),
-    val summary: String = "",
-    val agentMode: AgentMode = AgentMode.CHAT,
-    val lastPromptTokens: Int = 0,
-    val userMessageCount: Int = 0
-)
-
-@Serializable
-data class ArchitectResponse(
-    val content: String = "",
-    val currentTask: String? = null,
-    val decision: String? = null
-)
-
-fun timestampMessage(): Message {
-    val ts = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"))
-    return Message("assistant", "Текущая дата и время: $ts")
-}
 
 val json = Json { ignoreUnknownKeys = true }
 val prettyJson = Json { prettyPrint = true; ignoreUnknownKeys = true }

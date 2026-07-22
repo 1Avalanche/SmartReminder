@@ -1,56 +1,5 @@
 package smartagent
 
-enum class ChatSetting(val displayName: String) {
-    NO("no"),
-    OPTIMUM("optimum");
-
-    companion object {
-        fun fromString(s: String) = entries.find { it.displayName.equals(s, ignoreCase = true) }
-    }
-}
-
-val CHAT_BASE_PROMPT = """
-    Ты - персональный ассистент. Твоя задача - помочь пользователю решить любую его задачу. 
-    Отвечай по делу, не фантазируй. Предоставляй порядок своих рассуждений.
-""".trimIndent()
-
-@kotlinx.serialization.Serializable
-enum class AgentMode(val displayName: String, val basePrompt: String) {
-    CHAT(
-        displayName = "chat",
-        basePrompt = CHAT_BASE_PROMPT
-    ),
-    CODE_ANALYZER(
-        displayName = "code-analyzer",
-        basePrompt = """
-Ты — эксперт по анализу кода. Твои задачи: искать баги и уязвимости, предлагать рефакторинг, объяснять архитектурные решения, проводить code review.
-При анализе указывай точные места проблем (файл:строка если известно), объясняй причину, предлагай конкретное исправление с примером кода.
-Анализируй код структурно: сначала общий обзор, затем конкретные проблемы по приоритету.
-        """.trimIndent()
-    ),
-    ARCHITECT(
-        displayName = "architect",
-        basePrompt = "Ты — архитектор программного обеспечения. Помогаешь проектировать системы и принимать архитектурные решения."
-    ),
-    ASSIST(
-        displayName = "assist",
-        basePrompt = ""   // assist mode talks to MCP servers, not the LLM
-    ),
-    INDEX(
-        displayName = "index",
-        basePrompt = ""   // index mode runs RAG pipeline, not the LLM
-    ),
-    QUESTION(
-        displayName = "question",
-        basePrompt = ""   // loaded from file in CLI, basePrompt built dynamically
-    );
-
-    companion object {
-        fun fromName(name: String): AgentMode? =
-            entries.find { it.displayName.equals(name, ignoreCase = true) }
-    }
-}
-
 enum class ModelConfig(
     val shortName: String,
     val description: String,

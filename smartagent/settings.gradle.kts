@@ -18,4 +18,4 @@ dependencyResolutionManagement {
     }
 }
 
-include(":llm-client", ":cli", ":telegram", ":investigator")
+include(":llm-client", ":investigator")
