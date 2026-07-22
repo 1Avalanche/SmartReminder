@@ -16,14 +16,20 @@ import smartagent.investigator.model.displayName
 import smartagent.investigator.model.resolveRepo
 import smartagent.mcp_handler.McpSession
 
+data class DefinitionCandidate(
+    val channelAlias: String,
+    val channelPrimaryName: String,
+    val output: ChannelAgentOutput.Result
+)
+
 sealed class OrchestratorResponse {
     data class FinalAnswer(val text: String, val isError: Boolean = false) : OrchestratorResponse()
     data class NeedsClarification(
         val options: List<UiSearchResult>,
         val pendingQuery: String
     ) : OrchestratorResponse()
-    data class NeedsChannelSelection(
-        val availableChannels: List<String>,
+    data class NeedsDefinitionSelection(
+        val candidates: List<DefinitionCandidate>,
         val pendingQuery: String
     ) : OrchestratorResponse()
     data class Rejected(val reason: String) : OrchestratorResponse()
@@ -65,11 +71,7 @@ class InvestigatorOrchestrator(
     ): OrchestratorResponse {
         val alias = queryType.channelAlias
         if (alias == null) {
-            val allAliases = config.channels.map { it.primaryName }.distinct()
-            return OrchestratorResponse.NeedsChannelSelection(
-                availableChannels = allAliases,
-                pendingQuery = queryType.searchQuery
-            )
+            return searchAllChannels(queryType.searchQuery, session)
         }
         val channelRepo = config.channels.resolveRepo(alias)
             ?: return OrchestratorResponse.FinalAnswer(
@@ -93,29 +95,66 @@ class InvestigatorOrchestrator(
         )
     }
 
-    fun handleChannelSearch(
-        channelAlias: String,
+    private fun searchAllChannels(
         searchQuery: String,
         session: InvestigatorSession
     ): OrchestratorResponse {
-        val channelRepo = config.channels.resolveRepo(channelAlias)
-            ?: return OrchestratorResponse.FinalAnswer(
-                "⚠️ Не найден репозиторий для канала «$channelAlias» в channels.json.",
-                isError = true
-            )
-        val output = channelSearchAgent.searchDirect(
-            userQuery = searchQuery,
-            channelAlias = channelAlias,
-            channelRepo = channelRepo,
-            history = emptyList(),
-            definitionHint = session.channelFileHints[channelAlias]
-        )
-        if (output is ChannelAgentOutput.Result) {
-            session.channelFileHints[channelAlias] = output.data.definitionPath
+        val candidates = mutableListOf<DefinitionCandidate>()
+
+        for (mapping in config.channels) {
+            val alias = mapping.primaryName
+            println("${GRAY}Ищу в канале $alias...$RESET")
+            val output = runCatching {
+                channelSearchAgent.searchDirect(
+                    userQuery = searchQuery,
+                    channelAlias = alias,
+                    channelRepo = mapping.repoName,
+                    history = emptyList(),
+                    definitionHint = session.channelFileHints[alias]
+                )
+            }.getOrElse { e ->
+                System.err.println("[orchestrator] Channel $alias search failed: ${e.message}")
+                return@searchAllChannels OrchestratorResponse.FinalAnswer(
+                    "⚠️ Ошибка при поиске в канале $alias: ${e.message}",
+                    isError = true
+                )
+            }
+
+            if (output is ChannelAgentOutput.Result) {
+                session.channelFileHints[alias] = output.data.definitionPath
+                candidates += DefinitionCandidate(
+                    channelAlias = alias,
+                    channelPrimaryName = mapping.primaryName,
+                    output = output
+                )
+            }
         }
+
+        return when {
+            candidates.isEmpty() ->
+                OrchestratorResponse.FinalAnswer(
+                    "❌ Не найдено «$searchQuery» ни в одном из каналов.",
+                    isError = true
+                )
+            candidates.size == 1 -> {
+                val c = candidates.first()
+                OrchestratorResponse.FinalAnswer(formatChannelOutput(c.output, c.channelAlias))
+            }
+            else ->
+                OrchestratorResponse.NeedsDefinitionSelection(
+                    candidates = candidates,
+                    pendingQuery = searchQuery
+                )
+        }
+    }
+
+    fun handleDefinitionSelection(
+        candidate: DefinitionCandidate,
+        session: InvestigatorSession
+    ): OrchestratorResponse {
+        session.channelFileHints[candidate.channelAlias] = candidate.output.data.definitionPath
         return OrchestratorResponse.FinalAnswer(
-            formatChannelOutput(output, channelAlias),
-            isError = output !is ChannelAgentOutput.Result
+            formatChannelOutput(candidate.output, candidate.channelAlias)
         )
     }
 

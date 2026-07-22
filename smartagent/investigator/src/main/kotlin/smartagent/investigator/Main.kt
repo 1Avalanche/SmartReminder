@@ -15,7 +15,7 @@ private const val GRAY = "[90m"
 private sealed class ReplState {
     object Idle : ReplState()
     data class AwaitingUiClarification(val options: List<UiSearchResult>, val pendingQuery: String) : ReplState()
-    data class AwaitingChannelSelection(val availableChannels: List<String>, val pendingQuery: String) : ReplState()
+    data class AwaitingDefinitionSelection(val candidates: List<DefinitionCandidate>, val pendingQuery: String) : ReplState()
 }
 
 fun main() {
@@ -109,19 +109,17 @@ fun main() {
                 }
             }
 
-            is ReplState.AwaitingChannelSelection -> {
-                // Accept either number (1..N) or channel alias directly
-                val selectedAlias = resolveChannelInput(input, s.availableChannels)
-                if (selectedAlias != null) {
+            is ReplState.AwaitingDefinitionSelection -> {
+                val idx = input.toIntOrNull()
+                if (idx != null && idx in 1..s.candidates.size) {
                     state = ReplState.Idle
-                    println("${GRAY}Ищу в канале $selectedAlias...$RESET")
                     val t0 = System.currentTimeMillis()
                     val response = safeHandle {
-                        orchestrator.handleChannelSearch(selectedAlias, s.pendingQuery, session)
+                        orchestrator.handleDefinitionSelection(s.candidates[idx - 1], session)
                     }
                     state = processResponse(response, session, s.pendingQuery, System.currentTimeMillis() - t0, CORPORATE.apiModelId)
                 } else {
-                    println("${YELLOW}Не распознан канал. Введите номер или алиас из списка выше.$RESET")
+                    println("${YELLOW}Введите номер от 1 до ${s.candidates.size}.$RESET")
                 }
             }
 
@@ -135,12 +133,6 @@ fun main() {
     }
 
     McpManager.getSession("github")?.close()
-}
-
-private fun resolveChannelInput(input: String, channels: List<String>): String? {
-    val idx = input.toIntOrNull()
-    if (idx != null && idx in 1..channels.size) return channels[idx - 1]
-    return channels.firstOrNull { it.equals(input.trim(), ignoreCase = true) }
 }
 
 private fun safeHandle(block: () -> OrchestratorResponse): OrchestratorResponse =
@@ -183,13 +175,13 @@ private fun processResponse(
             println("Введите номер:")
             ReplState.AwaitingUiClarification(response.options, response.pendingQuery)
         }
-        is OrchestratorResponse.NeedsChannelSelection -> {
-            println("${YELLOW}Уточните, в каком канале искать:$RESET")
-            response.availableChannels.forEachIndexed { i, alias ->
-                println("  ${i + 1}. $alias")
+        is OrchestratorResponse.NeedsDefinitionSelection -> {
+            println("${YELLOW}Найдено в нескольких каналах. Уточните, какой именно:$RESET")
+            response.candidates.forEachIndexed { i, c ->
+                println("  ${i + 1}. [${c.channelPrimaryName}] ${c.output.data.definitionPath}")
             }
-            println("Введите номер или название канала:")
-            ReplState.AwaitingChannelSelection(response.availableChannels, response.pendingQuery)
+            println("Введите номер:")
+            ReplState.AwaitingDefinitionSelection(response.candidates, response.pendingQuery)
         }
     }
 }

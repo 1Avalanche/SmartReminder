@@ -79,7 +79,7 @@ $hintBlock
 owner: $owner
 repo канала: $channelRepo
 алиас канала: ${uiResult.channelAlias}
-метод API (path для поиска дефиниции): ${uiResult.apiMethod}
+идентификатор дефиниции: ${uiResult.apiMethod}
 искомое поле: ${uiResult.apiField}
 $hintBlock
 Выполни поиск по алгоритму из системного промпта и верни результат.
@@ -151,9 +151,19 @@ $hintBlock
 ## Алгоритм поиска (минимум инструментов)
 
 ### Шаг 1. Найти дефиницию через search_code — НЕ листинг папок
-Используй search_code для поиска строки `path: <apiMethod>` в репозитории канала.
-Параметры:
-- query: `path: v4/product` (подставь реальный apiMethod)
+
+Определи формат идентификатора дефиниции из запроса:
+
+**Формат A — endpoint-path** (содержит `/`, например: `v4/product`, `v1/offers`):
+Ищи `path: v4/product` в репозитории.
+- query: `path: v4/product`
+
+**Формат B — name/title** (содержит `_` и не содержит `/`, например: `v4_product`, `v1_offers`):
+Ищи `name: v4_product` или `title: v4_product` в репозитории.
+- Сначала query: `name: v4_product`
+- Если не нашёл — query: `title: v4_product`
+
+Параметры search_code:
 - owner: из запроса
 - repo: из запроса
 
@@ -167,6 +177,33 @@ get_file_contents для файла из результата search_code.
 3. Если поле вычисляется из нескольких полей бэкенда (сумма, разность, условие, конкатенация и т.п.) —
    запиши формулу в "transformation". Примеры: "body.a + body.b", "body.c ?? body.d", "body.x * 100".
    Если поле берётся напрямую — оставь transformation: null.
+4. Если yaml ссылается на .js файл — прочти его для поиска sourceFields.
+
+### Правило sourceFields при чтении JS
+
+`sourceFields` — это **конечные поля из `response.body`**, которые реально читаются в логике.
+НЕ промежуточные переменные и NOT алиасы деструктуризации.
+
+Пример JS:
+```js
+module.exports = ({ response, STOCKS_RESULT: { body } }) => {
+  const {
+    item,
+    stockByZone: {
+      magOut,
+      ...restStocks
+    } = {}
+  } = body;
+}
+```
+Здесь `stockByZone` — это промежуточный алиас деструктуризации (`body.stockByZone: { ... }`).
+Конечные поля, которые реально используются: `body.stockByZone.magOut`, `body.stockByZone` (через `restStocks`).
+`sourceFields` = `["body.stockByZone.magOut", "body.stockByZone"]` — НЕ `["body.stockByZone"]` как единственное.
+
+Общее правило:
+- Если `const { alias: { field1, ...rest } = {} } = body` → sourceFields включает `body.alias.field1` и `body.alias`
+- Если `const { field } = body` → sourceFields = `["body.field"]`
+- Если `body.a + body.b` → sourceFields = `["body.a", "body.b"]`, transformation = `"body.a + body.b"`
 
 ### Шаг 3. Если поле не в yaml напрямую — искать в shared_flow
 Если yaml ссылается на shared_flow — прочти нужный файл из shared_flows/.
@@ -180,7 +217,7 @@ get_file_contents для config/production.json.
 
 - Шаг 1 ВСЕГДА через search_code, НЕ через листинг definitions/.
 - Не читай все yaml подряд — только тот, что нашёл в шаге 1.
-- Если search_code нашёл несколько файлов — возьми тот, чей path точно совпадает.
+- Если search_code нашёл несколько файлов — возьми тот, чей path/name/title точно совпадает.
 - Если path в yaml содержит переменные (например: /v4/{version}/product) — это тоже совпадение.
 
 ## Формат ответа FINAL_ANSWER
@@ -194,7 +231,18 @@ get_file_contents для config/production.json.
   "backendAlias": "back_stock",
   "backendHost": "https://back-stock.example.com",
   "backendBasePath": "/v1/stock",
-  "sourceFields": ["stocks.guaranteed"],
+  "sourceFields": ["body.stocks.guaranteed"],
+  "transformation": null
+}
+
+Если нашёл (деструктуризация с вложенным алиасом):
+{
+  "status": "found",
+  "definitionPath": "definitions/product",
+  "backendAlias": "back_stock",
+  "backendHost": "https://back-stock.example.com",
+  "backendBasePath": "/v1/stock",
+  "sourceFields": ["body.stockByZone.magOut", "body.stockByZone"],
   "transformation": null
 }
 
@@ -205,8 +253,8 @@ get_file_contents для config/production.json.
   "backendAlias": "back_stock",
   "backendHost": "https://back-stock.example.com",
   "backendBasePath": "/v1/stock",
-  "sourceFields": ["stocks.other", "stocks.plus", "stocks.bonus"],
-  "transformation": "stocks.other + stocks.plus + stocks.bonus"
+  "sourceFields": ["body.stocks.other", "body.stocks.plus", "body.stocks.bonus"],
+  "transformation": "body.stocks.other + body.stocks.plus + body.stocks.bonus"
 }
 
 Если не нашёл метод/поле:
