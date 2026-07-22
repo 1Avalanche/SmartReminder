@@ -30,3 +30,4 @@ smartagent/user_profile.md
 smartagent/.indexed
 smartagent/temp/*
 /AGENTS.md
+/smartagent/investigator/src/.properties

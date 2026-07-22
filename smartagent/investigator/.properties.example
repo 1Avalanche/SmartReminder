@@ -1,0 +1,14 @@
+# Copy this file to .properties and fill in the values
+# This file goes into the macOS app bundle via jpackageDmg task
+
+# GitHub Enterprise MCP credentials
+GITHUB_CORP_TOKEN=ghp_...
+GITHUB_CORP_HOST=https://github.example.com
+
+# Investigator config
+INVASTIGATOR_OWNERR=my-org
+UI_REPO=my-ui-repo
+
+# LLM (MiniMax via GPU Stack)
+GPU_STACK_API_KEY=...
+GPU_STACK_URL=https://<gpu-stack-host>/v1
