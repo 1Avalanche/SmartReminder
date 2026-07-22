@@ -80,7 +80,6 @@ class InvestigatorToolLoop(
                             cachedFilePath = filePath
                             val cached = fileCache.get(filePath)
                             if (cached != null) {
-                                System.err.println("[investigator] File cache hit: $filePath")
                                 messages += Message("user", "Результат $toolName:\n$cached")
                                 return@repeat
                             }

@@ -9,6 +9,7 @@ data class ChannelSearchResult(
     val backendAlias: String,
     val backendHost: String,
     val backendBasePath: String,
+    val backendMethod: String? = null,
     val sourceFields: List<String>,
     val transformation: String? = null
 )

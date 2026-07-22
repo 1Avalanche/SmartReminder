@@ -42,8 +42,8 @@ class InvestigatorOrchestrator(
     private val model: ModelConfig
 ) {
     companion object {
-        private const val GRAY = "[90m"
-        private const val RESET = "[0m"
+        private const val GRAY = "\u001B[90m"
+        private const val RESET = "\u001B[0m"
     }
     private val classifier = QueryClassifier(gateway, model)
     private val uiSearchAgent = UiSearchAgent(githubSession, gateway, model, config.owner, config.uiRepo)
@@ -166,8 +166,12 @@ class InvestigatorOrchestrator(
                     appendLine("Канал: ${config.channels.displayName(channelAlias)} (${r.channelRepo})")
                     appendLine("Дефиниция: ${r.definitionPath}")
                     appendLine("Бэкенд: ${r.backendHost}${r.backendBasePath} (алиас: ${r.backendAlias})")
-                    appendLine("Поля: ${r.sourceFields.joinToString(", ")}")
-                    if (!r.transformation.isNullOrBlank()) appendLine("Трансформация: ${r.transformation}")
+                    if (!r.backendMethod.isNullOrBlank()) appendLine("Метод: ${r.backendMethod}")
+                    val mapping = if (!r.transformation.isNullOrBlank())
+                        "${r.sourceFields.joinToString(", ")} (${r.transformation})"
+                    else
+                        "берем из поля ${r.sourceFields.joinToString(", ")}"
+                    appendLine("Маппинг: $mapping")
                 }.trimEnd()
             }
             is ChannelAgentOutput.NoMethod ->

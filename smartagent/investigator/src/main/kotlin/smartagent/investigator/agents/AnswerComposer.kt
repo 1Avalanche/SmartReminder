@@ -56,7 +56,8 @@ $uncertaintyBlock
                     appendLine("Бэкенд (алиас): ${r.backendAlias}")
                     appendLine("Бэкенд (host): ${r.backendHost}")
                     appendLine("Бэкенд (basepath): ${r.backendBasePath}")
-                    appendLine("Поля источника: ${r.sourceFields.joinToString(", ")}")
+                    if (!r.backendMethod.isNullOrBlank()) appendLine("Метод бэкенда: ${r.backendMethod}")
+                    appendLine("Поля источника (из body): ${r.sourceFields.joinToString(", ")}")
                     if (!r.transformation.isNullOrBlank()) appendLine("Трансформация: ${r.transformation}")
                 }
                 is ChannelAgentOutput.NoMethod ->
@@ -97,9 +98,9 @@ $uncertaintyBlock
                 is ChannelAgentOutput.Result -> {
                     val r = ch.data
                     val mapping = if (!r.transformation.isNullOrBlank())
-                        r.transformation
+                        "${r.sourceFields.joinToString(", ")} (${r.transformation})"
                     else
-                        r.sourceFields.joinToString(", ")
+                        "берем из поля ${r.sourceFields.joinToString(", ")}"
 
                     if (successOutputs.size > 1) {
                         appendLine("Поле ${ui.apiField} берём из:")
@@ -108,7 +109,7 @@ $uncertaintyBlock
                     }
                     appendLine("  Дефиниция: ${r.definitionPath}")
                     appendLine("  Бэкенд: ${r.backendHost}${r.backendBasePath}")
-                    if (ui.apiMethod.isNotBlank()) appendLine("  Метод: ${ui.apiMethod}")
+                    if (!r.backendMethod.isNullOrBlank()) appendLine("  Метод: ${r.backendMethod}")
                     appendLine("  Маппинг в дефиниции: $mapping")
                     appendLine()
                 }
@@ -133,31 +134,41 @@ $uncertaintyBlock
 Данные для поля «{displayText}» получаем отсюда:
   Дефиниция: {definitionPath}
   Бэкенд: {backendHost}{backendBasePath}
-  Метод: {apiMethod} (добавить только если есть в данных)
-  Маппинг в дефиниции: {transformation если есть, иначе: перечисление sourceFields}
+  Метод: {backendMethod} (ОБЯЗАТЕЛЬНО: тип HTTP-метода + path бэкенда, например GET /v1/getData. Добавлять только если есть в данных. Это эндпоинт бэкенда, НЕ path дефиниции.)
+  Маппинг в дефиниции: {см. правила маппинга ниже}
 
 ## Если данные из нескольких дефиниций:
 
-Маппинг на ui: {apiField_1} + {apiField_2} (перечисли все UI-поля)
+Маппинг на ui: {apiField_1} + {apiField_2}
 
 Поле {apiField_1} берём из:
   Дефиниция: {definitionPath_1}
   Бэкенд: {backendHost_1}{backendBasePath_1}
-  Метод: {apiMethod_1} (добавить только если есть в данных)
-  Маппинг в дефиниции: {transformation_1 или sourceFields_1}
+  Метод: {backendMethod_1}
+  Маппинг в дефиниции: {см. правила маппинга ниже}
 
 Поле {apiField_2} берём из:
-  Дефиниция: {definitionPath_2}
-  Бэкенд: {backendHost_2}{backendBasePath_2}
-  Метод: {apiMethod_2} (добавить только если есть в данных)
-  Маппинг в дефиниции: {transformation_2 или sourceFields_2}
+  ...
 
 ## Правила
 
-- Строку «Метод:» добавлять ТОЛЬКО если apiMethod присутствует в данных.
-- Если в данных есть предупреждение системы проверки — вставь его перед ответом.
-- Если в данных есть ошибки поиска — добавь в конец.
-- Никакого лишнего текста. Только данные о data flow.
+### Дефиниция
+Только значение name/title/path из YAML (например: v4_product или v4/product). Без пути к файлу.
+
+### Метод
+Эндпоинт бэкенда с HTTP-методом: «GET /v1/getData», «POST /offers», «PATCH /update».
+Добавлять ТОЛЬКО если «Метод бэкенда» присутствует в данных.
+
+### Маппинг в дефиниции
+- Если операции нет → «берем из поля {body.X}»
+- Если есть трансформация → «{body.field1}, {body.field2} ({описание операции})»
+  Примеры: «body.a, body.b (сложение)», «body.x, body.y (nullish coalescing body.x ?? body.y)»
+- Использовать ОРИГИНАЛЬНЫЕ поля из body ответа бэкенда. НЕ внутренние переменные функции.
+
+### Прочее
+- Предупреждение системы проверки — вставить перед ответом.
+- Ошибки поиска — добавить в конец.
+- Никакого лишнего текста.
 """.trimIndent()
     }
 }

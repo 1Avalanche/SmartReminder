@@ -118,6 +118,7 @@ $hintBlock
                             backendAlias = (obj["backendAlias"] as? JsonPrimitive)?.content ?: "",
                             backendHost = (obj["backendHost"] as? JsonPrimitive)?.content ?: "",
                             backendBasePath = (obj["backendBasePath"] as? JsonPrimitive)?.content ?: "",
+                            backendMethod = (obj["backendMethod"] as? JsonPrimitive)?.content,
                             sourceFields = sourceFields,
                             transformation = (obj["transformation"] as? JsonPrimitive)?.content
                         )
@@ -172,17 +173,16 @@ $hintBlock
 ### Шаг 2. Прочитать найденный yaml
 get_file_contents для файла из результата search_code.
 В yaml найди:
-1. Секцию контракта (response / output / result) — ищи искомое apiField
-2. Алиас бэкенда для этого поля (источник данных)
-3. Если поле вычисляется из нескольких полей бэкенда (сумма, разность, условие, конкатенация и т.п.) —
-   запиши формулу в "transformation". Примеры: "body.a + body.b", "body.c ?? body.d", "body.x * 100".
-   Если поле берётся напрямую — оставь transformation: null.
+1. Значение поля `name:` или `title:` или `path:` — только само значение (например: `v4_product`), без пути к файлу. Это идёт в `definitionPath`.
+2. Алиас бэкенда (`backendAlias`) и его HTTP-метод вызова из yaml (`method:` + `path:` или `url:`).
+   HTTP-метод и путь бэкенда записать в `backendMethod` как `"GET /v1/data"` или `"POST /getData"`. Это эндпоинт бэкенда, который канал вызывает, — НЕ path дефиниции.
+3. Секцию контракта (response / output / result) — ищи искомое apiField.
 4. Если yaml ссылается на .js файл — прочти его для поиска sourceFields.
 
-### Правило sourceFields при чтении JS
+### Правило sourceFields и transformation при чтении JS
 
-`sourceFields` — это **конечные поля из `response.body`**, которые реально читаются в логике.
-НЕ промежуточные переменные и NOT алиасы деструктуризации.
+`sourceFields` — это **оригинальные поля из `response.body` бэкенда**, которые реально читаются.
+НЕ промежуточные переменные, НЕ алиасы деструктуризации — только листовые поля.
 
 Пример JS:
 ```js
@@ -196,14 +196,15 @@ module.exports = ({ response, STOCKS_RESULT: { body } }) => {
   } = body;
 }
 ```
-Здесь `stockByZone` — это промежуточный алиас деструктуризации (`body.stockByZone: { ... }`).
-Конечные поля, которые реально используются: `body.stockByZone.magOut`, `body.stockByZone` (через `restStocks`).
-`sourceFields` = `["body.stockByZone.magOut", "body.stockByZone"]` — НЕ `["body.stockByZone"]` как единственное.
+`stockByZone` — промежуточный алиас. Оригинальные поля: `body.stockByZone.magOut` и остаток `body.stockByZone`.
+→ `sourceFields` = `["body.stockByZone.magOut", "body.stockByZone"]`
 
 Общее правило:
-- Если `const { alias: { field1, ...rest } = {} } = body` → sourceFields включает `body.alias.field1` и `body.alias`
-- Если `const { field } = body` → sourceFields = `["body.field"]`
-- Если `body.a + body.b` → sourceFields = `["body.a", "body.b"]`, transformation = `"body.a + body.b"`
+- `const { alias: { field1, ...rest } = {} } = body` → `["body.alias.field1", "body.alias"]`
+- `const { field } = body` → `["body.field"]`
+- `body.a + body.b` → `sourceFields = ["body.a", "body.b"]`, `transformation = "body.a + body.b"`
+
+`transformation` — описание операции над оригинальными полями body, НЕ над внутренними переменными.
 
 ### Шаг 3. Если поле не в yaml напрямую — искать в shared_flow
 Если yaml ссылается на shared_flow — прочти нужный файл из shared_flows/.
@@ -227,10 +228,11 @@ get_file_contents для config/production.json.
 Если нашёл (прямое поле):
 {
   "status": "found",
-  "definitionPath": "definitions/product",
+  "definitionPath": "v4_product",
   "backendAlias": "back_stock",
   "backendHost": "https://back-stock.example.com",
   "backendBasePath": "/v1/stock",
+  "backendMethod": "GET /getData",
   "sourceFields": ["body.stocks.guaranteed"],
   "transformation": null
 }
@@ -238,10 +240,11 @@ get_file_contents для config/production.json.
 Если нашёл (деструктуризация с вложенным алиасом):
 {
   "status": "found",
-  "definitionPath": "definitions/product",
+  "definitionPath": "v4_product",
   "backendAlias": "back_stock",
   "backendHost": "https://back-stock.example.com",
   "backendBasePath": "/v1/stock",
+  "backendMethod": "GET /getData",
   "sourceFields": ["body.stockByZone.magOut", "body.stockByZone"],
   "transformation": null
 }
@@ -249,10 +252,11 @@ get_file_contents для config/production.json.
 Если нашёл (вычисляемое поле):
 {
   "status": "found",
-  "definitionPath": "definitions/product",
+  "definitionPath": "v4_product",
   "backendAlias": "back_stock",
   "backendHost": "https://back-stock.example.com",
   "backendBasePath": "/v1/stock",
+  "backendMethod": "POST /getData",
   "sourceFields": ["body.stocks.other", "body.stocks.plus", "body.stocks.bonus"],
   "transformation": "body.stocks.other + body.stocks.plus + body.stocks.bonus"
 }

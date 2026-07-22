@@ -7,10 +7,12 @@ import smartagent.investigator.model.UiSearchResult
 import smartagent.mcp_handler.McpManager
 
 private const val PROMPT = "investigator> "
-private const val RESET = "[0m"
-private const val YELLOW = "[33m"
-private const val CYAN = "[36m"
-private const val GRAY = "[90m"
+private const val RESET = "\u001B[0m"
+private const val YELLOW = "\u001B[33m"
+private const val CYAN = "\u001B[36m"
+private const val GRAY = "\u001B[90m"
+
+private val MODEL_PRIORITY = listOf(ModelConfig.DeepSeekFlash, ModelConfig.Qwen)
 
 private sealed class ReplState {
     object Idle : ReplState()
@@ -25,15 +27,17 @@ fun main() {
         return
     }
 
-    val DeepSeekFlash = ModelConfig.DeepSeekFlash
-    if (Config.apiKey(DeepSeekFlash) == null) {
-        println("${CYAN}Не найден GPU_STACK_API_KEY в .properties$RESET")
+    val availableModels = MODEL_PRIORITY.filter {
+        Config.apiKey(it) != null && Config.apiUrl(it).isNotBlank()
+    }
+
+    if (availableModels.isEmpty()) {
+        println("${CYAN}Не найден ни один доступный API ключ (GPU_STACK_API_KEY + GPU_STACK_URL).$RESET")
         return
     }
-    if (Config.apiUrl(DeepSeekFlash).isBlank()) {
-        println("${CYAN}Не найден GPU_STACK_URL в .properties$RESET")
-        return
-    }
+
+    val primaryModel = availableModels.first()
+    val fallbackModel = availableModels.getOrNull(1)
 
     when (DockerChecker.check()) {
         DockerChecker.Result.NotInstalled -> {
@@ -60,10 +64,14 @@ fun main() {
     }
 
     val gateway = OkHttpLLMGateway()
-    val orchestrator = InvestigatorOrchestrator(config, githubSession, gateway, DeepSeekFlash)
+    val primaryOrchestrator = InvestigatorOrchestrator(config, githubSession, gateway, primaryModel)
+    val fallbackOrchestrator = fallbackModel?.let { InvestigatorOrchestrator(config, githubSession, gateway, it) }
     val session = InvestigatorSession()
 
     println("${CYAN}Investigator готов. UI репозиторий: ${config.owner}/${config.uiRepo}$RESET")
+    print("${GRAY}Модели: ${primaryModel.apiModelId}")
+    if (fallbackModel != null) print(" → ${fallbackModel.apiModelId} (запасная)")
+    println(RESET)
     println("${GRAY}Команды: clear, exit/quit$RESET")
     println()
 
@@ -102,8 +110,10 @@ fun main() {
                     state = ReplState.Idle
                     println("${GRAY}Ищу в канале...$RESET")
                     val t0 = System.currentTimeMillis()
-                    val response = safeHandle { orchestrator.handleClarification(s.options[idx - 1], s.pendingQuery, session) }
-                    state = processResponse(response, session, s.pendingQuery, System.currentTimeMillis() - t0, DeepSeekFlash.apiModelId)
+                    val (response, usedModel) = handleWithFallback(
+                        primaryModel, primaryOrchestrator, fallbackModel, fallbackOrchestrator
+                    ) { it.handleClarification(s.options[idx - 1], s.pendingQuery, session) }
+                    state = processResponse(response, session, s.pendingQuery, System.currentTimeMillis() - t0, usedModel)
                 } else {
                     println("${YELLOW}Введите номер от 1 до ${s.options.size}.$RESET")
                 }
@@ -115,9 +125,9 @@ fun main() {
                     state = ReplState.Idle
                     val t0 = System.currentTimeMillis()
                     val response = safeHandle {
-                        orchestrator.handleDefinitionSelection(s.candidates[idx - 1], session)
+                        primaryOrchestrator.handleDefinitionSelection(s.candidates[idx - 1], session)
                     }
-                    state = processResponse(response, session, s.pendingQuery, System.currentTimeMillis() - t0, DeepSeekFlash.apiModelId)
+                    state = processResponse(response, session, s.pendingQuery, System.currentTimeMillis() - t0, primaryModel)
                 } else {
                     println("${YELLOW}Введите номер от 1 до ${s.candidates.size}.$RESET")
                 }
@@ -126,8 +136,10 @@ fun main() {
             ReplState.Idle -> {
                 println("${GRAY}Обрабатываю...$RESET")
                 val t0 = System.currentTimeMillis()
-                val response = safeHandle { orchestrator.handle(input, session) }
-                state = processResponse(response, session, input, System.currentTimeMillis() - t0, DeepSeekFlash.apiModelId)
+                val (response, usedModel) = handleWithFallback(
+                    primaryModel, primaryOrchestrator, fallbackModel, fallbackOrchestrator
+                ) { it.handle(input, session) }
+                state = processResponse(response, session, input, System.currentTimeMillis() - t0, usedModel)
             }
         }
     }
@@ -135,27 +147,43 @@ fun main() {
     McpManager.getSession("github")?.close()
 }
 
+private fun handleWithFallback(
+    primaryModel: ModelConfig,
+    primaryOrchestrator: InvestigatorOrchestrator,
+    fallbackModel: ModelConfig?,
+    fallbackOrchestrator: InvestigatorOrchestrator?,
+    block: (InvestigatorOrchestrator) -> OrchestratorResponse
+): Pair<OrchestratorResponse, ModelConfig> {
+    val primary = safeHandle { block(primaryOrchestrator) }
+    if (primary is OrchestratorResponse.FinalAnswer && primary.isError
+        && fallbackOrchestrator != null && fallbackModel != null
+    ) {
+        println("${CYAN}${primaryModel.apiModelId} не нашел ответ, отдал на обработку ${fallbackModel.apiModelId}$RESET")
+        return safeHandle { block(fallbackOrchestrator) } to fallbackModel
+    }
+    return primary to primaryModel
+}
+
 private fun safeHandle(block: () -> OrchestratorResponse): OrchestratorResponse =
     runCatching(block).getOrElse { e ->
         System.err.println("[main] Orchestrator error: ${e.message}")
-        OrchestratorResponse.FinalAnswer("Произошла ошибка: ${e.message}")
+        OrchestratorResponse.FinalAnswer("Произошла ошибка: ${e.message}", isError = true)
     }
 
-private fun formatElapsed(ms: Long): String {
-    return if (ms < 1000) "${ms}ms" else "${"%.1f".format(ms / 1000.0)}s"
-}
+private fun formatElapsed(ms: Long): String =
+    if (ms < 1000) "${ms}ms" else "${"%.1f".format(ms / 1000.0)}s"
 
 private fun processResponse(
     response: OrchestratorResponse,
     session: InvestigatorSession,
     query: String,
     elapsedMs: Long = 0,
-    modelId: String = ""
+    usedModel: ModelConfig
 ): ReplState {
     return when (response) {
         is OrchestratorResponse.FinalAnswer -> {
             if (response.isError) println(response.text) else println("✅ ${response.text}")
-            println("${GRAY}$modelId | ${formatElapsed(elapsedMs)}$RESET")
+            println("${GRAY}ответил ${usedModel.apiModelId}, время ответа: ${formatElapsed(elapsedMs)}$RESET")
             println()
             session.clear()
             session.addExchange(query, response.text)
@@ -163,7 +191,7 @@ private fun processResponse(
         }
         is OrchestratorResponse.Rejected -> {
             println("$YELLOW🚫 ${response.reason}$RESET")
-            println("${GRAY}$modelId | ${formatElapsed(elapsedMs)}$RESET")
+            println("${GRAY}ответил ${usedModel.apiModelId}, время ответа: ${formatElapsed(elapsedMs)}$RESET")
             println()
             ReplState.Idle
         }

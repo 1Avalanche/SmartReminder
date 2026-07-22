@@ -55,7 +55,8 @@ class ChannelSearchAgentTest {
               "backendAlias": "back_stock",
               "backendHost": "https://back-stock.example.com",
               "backendBasePath": "/v1/stock",
-              "sourceFields": ["stocks.other", "stocks.plus"],
+              "backendMethod": "GET /getData",
+              "sourceFields": ["body.stocks.other", "body.stocks.plus"],
               "transformation": null
             }
         """.trimIndent()
@@ -65,6 +66,7 @@ class ChannelSearchAgentTest {
         assertIs<ChannelAgentOutput.Result>(result)
         assertEquals("back_stock", result.data.backendAlias)
         assertEquals("https://back-stock.example.com", result.data.backendHost)
+        assertEquals("GET /getData", result.data.backendMethod)
         assertEquals(2, result.data.sourceFields.size)
     }
 
