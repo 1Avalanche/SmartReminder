@@ -83,21 +83,39 @@ $uncertaintyBlock
         uiResults: List<UiSearchResult>,
         channelOutputs: List<Pair<UiSearchResult, ChannelAgentOutput>>
     ): String = buildString {
+        val successOutputs = channelOutputs.filter { (_, ch) -> ch is ChannelAgentOutput.Result }
+        val displayText = uiResults.firstOrNull()?.displayText ?: "?"
+
+        if (successOutputs.size > 1) {
+            val uiMapping = successOutputs.joinToString(" + ") { (ui, _) -> ui.apiField }
+            appendLine("Маппинг на ui: $uiMapping")
+            appendLine()
+        }
+
         channelOutputs.forEach { (ui, ch) ->
             when (ch) {
                 is ChannelAgentOutput.Result -> {
                     val r = ch.data
-                    val source = if (!r.transformation.isNullOrBlank())
-                        "из операции `${r.transformation}`"
+                    val mapping = if (!r.transformation.isNullOrBlank())
+                        r.transformation
                     else
-                        "из полей ${r.sourceFields.joinToString(", ")}"
-                    appendLine("Данные для \"${ui.displayText}\" берутся из ${ui.apiMethod} поля ${ui.apiField}. " +
-                        "Получаем из канала ${ui.channelAlias}, бэкенд ${r.backendHost}${r.backendBasePath}, $source.")
+                        r.sourceFields.joinToString(", ")
+
+                    if (successOutputs.size > 1) {
+                        appendLine("Поле ${ui.apiField} берём из:")
+                    } else {
+                        appendLine("Данные для поля «$displayText» получаем отсюда:")
+                    }
+                    appendLine("  Дефиниция: ${r.definitionPath}")
+                    appendLine("  Бэкенд: ${r.backendHost}${r.backendBasePath}")
+                    if (ui.apiMethod.isNotBlank()) appendLine("  Метод: ${ui.apiMethod}")
+                    appendLine("  Маппинг в дефиниции: $mapping")
+                    appendLine()
                 }
                 is ChannelAgentOutput.NoMethod ->
-                    appendLine("К сожалению, не нашлось поле/метод ${ch.param} в канале ${ch.channel}.")
+                    appendLine("Не нашлось поле/метод ${ch.param} в канале ${ch.channel}.")
                 is ChannelAgentOutput.NoBackend ->
-                    appendLine("К сожалению, не нашлось бэкенд источника в канале ${ch.channel}.")
+                    appendLine("Не нашлось бэкенд источника в канале ${ch.channel}.")
                 is ChannelAgentOutput.SearchError ->
                     appendLine("Ошибка при поиске в канале: ${ch.cause}")
             }
@@ -108,29 +126,38 @@ $uncertaintyBlock
         private val SYSTEM_PROMPT = """
 Ты — ассистент, который объясняет связи между UI и источниками данных в мобильном приложении.
 
-Отвечай чётко и по делу. Используй следующий формат ответа:
+Строго используй следующий формат ответа:
 
-Данные берутся из `<метод_api>` поля `<api_field>`.
-Получаем из канала `<алиас_канала>`, бэкенд `<host><basepath>`.
+## Если данные из одной дефиниции:
 
-Если transformation == null: из поля `<source_field>`
-Если transformation != null: из операции `<transformation>`
+Данные для поля «{displayText}» получаем отсюда:
+  Дефиниция: {definitionPath}
+  Бэкенд: {backendHost}{backendBasePath}
+  Метод: {apiMethod} (добавить только если есть в данных)
+  Маппинг в дефиниции: {transformation если есть, иначе: перечисление sourceFields}
 
-Примеры:
-- "из поля `body.price`"
-- "из операции `body.a + body.b + body.c`"
-- "из условия `body.x ?? body.y`"
+## Если данные из нескольких дефиниций:
 
-Если данные пришли из нескольких каналов/бэкендов — опиши каждый отдельно, пронумеруй.
+Маппинг на ui: {apiField_1} + {apiField_2} (перечисли все UI-поля)
 
-Если запрос содержал имя товара, объекта или пример — явно укажи в начале ответа как интерпретировал вопрос:
-"По запросу о [контекст из запроса] найдено поле «[displayText]»."
+Поле {apiField_1} берём из:
+  Дефиниция: {definitionPath_1}
+  Бэкенд: {backendHost_1}{backendBasePath_1}
+  Метод: {apiMethod_1} (добавить только если есть в данных)
+  Маппинг в дефиниции: {transformation_1 или sourceFields_1}
 
-Если в данных есть предупреждение системы проверки — включи его в ответ перед основными данными.
+Поле {apiField_2} берём из:
+  Дефиниция: {definitionPath_2}
+  Бэкенд: {backendHost_2}{backendBasePath_2}
+  Метод: {apiMethod_2} (добавить только если есть в данных)
+  Маппинг в дефиниции: {transformation_2 или sourceFields_2}
 
-Если в данных есть ошибки поиска — сообщи о них в конце ответа.
+## Правила
 
-Не добавляй лишнего текста. Только факты о data flow.
+- Строку «Метод:» добавлять ТОЛЬКО если apiMethod присутствует в данных.
+- Если в данных есть предупреждение системы проверки — вставь его перед ответом.
+- Если в данных есть ошибки поиска — добавь в конец.
+- Никакого лишнего текста. Только данные о data flow.
 """.trimIndent()
     }
 }
