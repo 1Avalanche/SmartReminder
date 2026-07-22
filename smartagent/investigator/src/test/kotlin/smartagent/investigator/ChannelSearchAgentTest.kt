@@ -17,7 +17,7 @@ import kotlin.test.assertTrue
 
 class ChannelSearchAgentTest {
 
-    private val model = ModelConfig.CORPORATE
+    private val model = ModelConfig.DeepSeekFlash
 
     private val sampleUiResult = UiSearchResult(
         stringId = "guaranteed_stock_title",

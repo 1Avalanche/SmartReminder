@@ -13,17 +13,29 @@ enum class ModelConfig(
     val temperature: Double? = null,
     val reasoningEffort: String? = null
 ) {
-    CORPORATE(
-        shortName = "corporate",
-        description = "corporate model",
+    DeepSeekFlash(
+        shortName = "deepseek",
+        description = "corporate model: deepseek-v4-flash",
+        apiModelId = "deepseek-v4-flash",
+        apiKeyProperty = "GPU_STACK_API_KEY",
+        url = "",
+        contextWindow = 1_000_000,
+        aliases = listOf("deepseek-v4-flash, deepseek"),
+        urlProperty = "GPU_STACK_URL",
+        temperature = 0.1,
+        reasoningEffort = "high"
+    ),
+    Qwen(
+        shortName = "qwen",
+        description = "corporate model: qwen3.5-397b-a17b",
         apiModelId = "qwen3.5-397b-a17b",
         apiKeyProperty = "GPU_STACK_API_KEY",
         url = "",
         contextWindow = 1_000_000,
-        aliases = listOf("corporate"),
+        aliases = listOf("qwen3.5-397b-a17b, qwen"),
         urlProperty = "GPU_STACK_URL",
         temperature = 0.2,
-        reasoningEffort = "high"
+        reasoningEffort = null
     );
 
     companion object {

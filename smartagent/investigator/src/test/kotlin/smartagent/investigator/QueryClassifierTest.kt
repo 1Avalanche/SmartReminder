@@ -13,7 +13,7 @@ import kotlin.test.assertNull
 
 class QueryClassifierTest {
 
-    private val model = ModelConfig.CORPORATE
+    private val model = ModelConfig.DeepSeekFlash
 
     private fun makeGateway(response: String): LLMGateway =
         object : LLMGateway {

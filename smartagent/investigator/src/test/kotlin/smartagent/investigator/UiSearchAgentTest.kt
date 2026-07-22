@@ -16,7 +16,7 @@ import kotlin.test.assertTrue
 
 class UiSearchAgentTest {
 
-    private val model = ModelConfig.CORPORATE
+    private val model = ModelConfig.DeepSeekFlash
 
     private fun makeMcpSession(): smartagent.mcp_handler.McpSession {
         val tools = listOf(

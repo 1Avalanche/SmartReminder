@@ -10,7 +10,7 @@ import kotlin.test.assertTrue
 
 class GuardAgentTest {
 
-    private val model = ModelConfig.CORPORATE
+    private val model = ModelConfig.DeepSeekFlash
 
     private fun makeGateway(responseContent: String): LLMGateway =
         object : LLMGateway {

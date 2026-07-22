@@ -25,12 +25,12 @@ fun main() {
         return
     }
 
-    val CORPORATE = ModelConfig.CORPORATE
-    if (Config.apiKey(CORPORATE) == null) {
+    val DeepSeekFlash = ModelConfig.DeepSeekFlash
+    if (Config.apiKey(DeepSeekFlash) == null) {
         println("${CYAN}Не найден GPU_STACK_API_KEY в .properties$RESET")
         return
     }
-    if (Config.apiUrl(CORPORATE).isBlank()) {
+    if (Config.apiUrl(DeepSeekFlash).isBlank()) {
         println("${CYAN}Не найден GPU_STACK_URL в .properties$RESET")
         return
     }
@@ -60,7 +60,7 @@ fun main() {
     }
 
     val gateway = OkHttpLLMGateway()
-    val orchestrator = InvestigatorOrchestrator(config, githubSession, gateway, CORPORATE)
+    val orchestrator = InvestigatorOrchestrator(config, githubSession, gateway, DeepSeekFlash)
     val session = InvestigatorSession()
 
     println("${CYAN}Investigator готов. UI репозиторий: ${config.owner}/${config.uiRepo}$RESET")
@@ -103,7 +103,7 @@ fun main() {
                     println("${GRAY}Ищу в канале...$RESET")
                     val t0 = System.currentTimeMillis()
                     val response = safeHandle { orchestrator.handleClarification(s.options[idx - 1], s.pendingQuery, session) }
-                    state = processResponse(response, session, s.pendingQuery, System.currentTimeMillis() - t0, CORPORATE.apiModelId)
+                    state = processResponse(response, session, s.pendingQuery, System.currentTimeMillis() - t0, DeepSeekFlash.apiModelId)
                 } else {
                     println("${YELLOW}Введите номер от 1 до ${s.options.size}.$RESET")
                 }
@@ -117,7 +117,7 @@ fun main() {
                     val response = safeHandle {
                         orchestrator.handleDefinitionSelection(s.candidates[idx - 1], session)
                     }
-                    state = processResponse(response, session, s.pendingQuery, System.currentTimeMillis() - t0, CORPORATE.apiModelId)
+                    state = processResponse(response, session, s.pendingQuery, System.currentTimeMillis() - t0, DeepSeekFlash.apiModelId)
                 } else {
                     println("${YELLOW}Введите номер от 1 до ${s.candidates.size}.$RESET")
                 }
@@ -127,7 +127,7 @@ fun main() {
                 println("${GRAY}Обрабатываю...$RESET")
                 val t0 = System.currentTimeMillis()
                 val response = safeHandle { orchestrator.handle(input, session) }
-                state = processResponse(response, session, input, System.currentTimeMillis() - t0, CORPORATE.apiModelId)
+                state = processResponse(response, session, input, System.currentTimeMillis() - t0, DeepSeekFlash.apiModelId)
             }
         }
     }
