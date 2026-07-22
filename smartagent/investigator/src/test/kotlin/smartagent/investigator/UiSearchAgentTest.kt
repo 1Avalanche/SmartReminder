@@ -16,7 +16,7 @@ import kotlin.test.assertTrue
 
 class UiSearchAgentTest {
 
-    private val model = ModelConfig.MINIMAX
+    private val model = ModelConfig.CORPORATE
 
     private fun makeMcpSession(): smartagent.mcp_handler.McpSession {
         val tools = listOf(

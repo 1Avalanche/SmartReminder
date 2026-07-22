@@ -13,7 +13,7 @@ import kotlin.test.assertNull
 
 class QueryClassifierTest {
 
-    private val model = ModelConfig.MINIMAX
+    private val model = ModelConfig.CORPORATE
 
     private fun makeGateway(response: String): LLMGateway =
         object : LLMGateway {

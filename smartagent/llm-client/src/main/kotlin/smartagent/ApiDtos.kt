@@ -4,6 +4,7 @@ import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 import kotlinx.serialization.EncodeDefault
 import kotlinx.serialization.ExperimentalSerializationApi
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 
@@ -31,7 +32,8 @@ data class ChatRequest(
     @EncodeDefault val reasoning: Reasoning = Reasoning(),
     @EncodeDefault(EncodeDefault.Mode.NEVER) val temperature: Double? = null,
     @EncodeDefault(EncodeDefault.Mode.NEVER) val max_tokens: Int? = null,
-    @EncodeDefault(EncodeDefault.Mode.NEVER) val options: OllamaOptions? = null
+    @EncodeDefault(EncodeDefault.Mode.NEVER) val options: OllamaOptions? = null,
+    @SerialName("reasoning_effort") @EncodeDefault(EncodeDefault.Mode.NEVER) val reasoningEffort: String? = null
 )
 
 @Serializable

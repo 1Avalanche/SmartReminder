@@ -25,12 +25,12 @@ fun main() {
         return
     }
 
-    val minimax = ModelConfig.MINIMAX
-    if (Config.apiKey(minimax) == null) {
+    val CORPORATE = ModelConfig.CORPORATE
+    if (Config.apiKey(CORPORATE) == null) {
         println("${CYAN}Не найден GPU_STACK_API_KEY в .properties$RESET")
         return
     }
-    if (Config.apiUrl(minimax).isBlank()) {
+    if (Config.apiUrl(CORPORATE).isBlank()) {
         println("${CYAN}Не найден GPU_STACK_URL в .properties$RESET")
         return
     }
@@ -60,7 +60,7 @@ fun main() {
     }
 
     val gateway = OkHttpLLMGateway()
-    val orchestrator = InvestigatorOrchestrator(config, githubSession, gateway, minimax)
+    val orchestrator = InvestigatorOrchestrator(config, githubSession, gateway, CORPORATE)
     val session = InvestigatorSession()
 
     println("${CYAN}Investigator готов. UI репозиторий: ${config.owner}/${config.uiRepo}$RESET")
@@ -101,8 +101,9 @@ fun main() {
                 if (idx != null && idx in 1..s.options.size) {
                     state = ReplState.Idle
                     println("${GRAY}Ищу в канале...$RESET")
+                    val t0 = System.currentTimeMillis()
                     val response = safeHandle { orchestrator.handleClarification(s.options[idx - 1], s.pendingQuery, session) }
-                    state = processResponse(response, session, s.pendingQuery)
+                    state = processResponse(response, session, s.pendingQuery, System.currentTimeMillis() - t0, CORPORATE.apiModelId)
                 } else {
                     println("${YELLOW}Введите номер от 1 до ${s.options.size}.$RESET")
                 }
@@ -114,10 +115,11 @@ fun main() {
                 if (selectedAlias != null) {
                     state = ReplState.Idle
                     println("${GRAY}Ищу в канале $selectedAlias...$RESET")
+                    val t0 = System.currentTimeMillis()
                     val response = safeHandle {
                         orchestrator.handleChannelSearch(selectedAlias, s.pendingQuery, session)
                     }
-                    state = processResponse(response, session, s.pendingQuery)
+                    state = processResponse(response, session, s.pendingQuery, System.currentTimeMillis() - t0, CORPORATE.apiModelId)
                 } else {
                     println("${YELLOW}Не распознан канал. Введите номер или алиас из списка выше.$RESET")
                 }
@@ -125,8 +127,9 @@ fun main() {
 
             ReplState.Idle -> {
                 println("${GRAY}Обрабатываю...$RESET")
+                val t0 = System.currentTimeMillis()
                 val response = safeHandle { orchestrator.handle(input, session) }
-                state = processResponse(response, session, input)
+                state = processResponse(response, session, input, System.currentTimeMillis() - t0, CORPORATE.apiModelId)
             }
         }
     }
@@ -146,14 +149,21 @@ private fun safeHandle(block: () -> OrchestratorResponse): OrchestratorResponse 
         OrchestratorResponse.FinalAnswer("Произошла ошибка: ${e.message}")
     }
 
+private fun formatElapsed(ms: Long): String {
+    return if (ms < 1000) "${ms}ms" else "${"%.1f".format(ms / 1000.0)}s"
+}
+
 private fun processResponse(
     response: OrchestratorResponse,
     session: InvestigatorSession,
-    query: String
+    query: String,
+    elapsedMs: Long = 0,
+    modelId: String = ""
 ): ReplState {
     return when (response) {
         is OrchestratorResponse.FinalAnswer -> {
             if (response.isError) println(response.text) else println("✅ ${response.text}")
+            println("${GRAY}$modelId | ${formatElapsed(elapsedMs)}$RESET")
             println()
             session.clear()
             session.addExchange(query, response.text)
@@ -161,6 +171,7 @@ private fun processResponse(
         }
         is OrchestratorResponse.Rejected -> {
             println("$YELLOW🚫 ${response.reason}$RESET")
+            println("${GRAY}$modelId | ${formatElapsed(elapsedMs)}$RESET")
             println()
             ReplState.Idle
         }

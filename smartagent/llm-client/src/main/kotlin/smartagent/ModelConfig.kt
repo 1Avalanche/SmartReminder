@@ -61,7 +61,8 @@ enum class ModelConfig(
     val aliases: List<String> = emptyList(),
     val isLocal: Boolean = false,
     val urlProperty: String = "",
-    val temperature: Double? = null
+    val temperature: Double? = null,
+    val reasoningEffort: String? = null
 ) {
     DEEPSEEK(
         shortName = "deepseek",
@@ -129,16 +130,17 @@ enum class ModelConfig(
         aliases = listOf("gemma3", "gemma3-12b"),
         isLocal = true
     ),
-    MINIMAX(
-        shortName = "minimax",
-        description = "MiniMax M2.7 — корпоративный GPU Stack",
+    CORPORATE(
+        shortName = "corporate",
+        description = "corporate model",
         apiModelId = "qwen3.5-397b-a17b",
         apiKeyProperty = "GPU_STACK_API_KEY",
         url = "",
         contextWindow = 1_000_000,
-        aliases = listOf("minimax-m2.7"),
+        aliases = listOf("corporate"),
         urlProperty = "GPU_STACK_URL",
-        temperature = 0.1
+        temperature = 0.2,
+        reasoningEffort = "high"
     );
 
     companion object {

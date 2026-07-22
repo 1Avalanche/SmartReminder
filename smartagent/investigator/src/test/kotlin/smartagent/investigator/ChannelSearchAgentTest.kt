@@ -17,7 +17,7 @@ import kotlin.test.assertTrue
 
 class ChannelSearchAgentTest {
 
-    private val model = ModelConfig.MINIMAX
+    private val model = ModelConfig.CORPORATE
 
     private val sampleUiResult = UiSearchResult(
         stringId = "guaranteed_stock_title",
