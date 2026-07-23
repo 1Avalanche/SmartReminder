@@ -108,6 +108,45 @@ tasks.register("jpackageDmg") {
     }
 }
 
+tasks.register("jpackageWindows") {
+    dependsOn(tasks.shadowJar)
+
+    val shadowJarFile = tasks.shadowJar.flatMap { it.archiveFile }
+    val buildDirProv  = layout.buildDirectory
+
+    doLast {
+        fun run(vararg cmd: String) {
+            val exit = ProcessBuilder(*cmd).inheritIO().start().waitFor()
+            check(exit == 0) { "Command failed: ${cmd.toList()}" }
+        }
+
+        val buildDir = buildDirProv.get().asFile
+        val staging  = buildDir.resolve("jpackage-input-win").also { it.mkdirs() }
+        val distDir  = buildDir.resolve("dist").also { it.mkdirs() }
+
+        shadowJarFile.get().asFile.copyTo(staging.resolve("investigator.jar"), overwrite = true)
+
+        val iconFile = projectDir.resolve("Investigator.ico")
+
+        val args = mutableListOf(
+            "jpackage",
+            "--type", "exe",
+            "--name", "Investigator",
+            "--input", staging.absolutePath,
+            "--main-jar", "investigator.jar",
+            "--dest", distDir.absolutePath,
+            "--app-version", "1.0.0",
+            "--vendor", "SmartAgent",
+            "--win-dir-chooser",
+            "--win-shortcut",
+            "--win-menu"
+        )
+        if (iconFile.exists()) args.addAll(listOf("--icon", iconFile.absolutePath))
+
+        run(*args.toTypedArray())
+    }
+}
+
 tasks.named<JavaExec>("run") {
     standardInput = System.`in`
     workingDir = rootProject.projectDir

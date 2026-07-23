@@ -1,0 +1,46 @@
+name: Build Windows Installer
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Install WiX Toolset
+        run: choco install wixtoolset --version 3.14.0 -y
+        shell: pwsh
+
+      - name: Create Windows icon
+        shell: pwsh
+        run: |
+          $src = "smartagent\investigator\investigator_logo.png"
+          $dst = "smartagent\investigator\Investigator.ico"
+          magick convert $src `
+            -define icon:auto-resize=256,128,64,48,32,16 `
+            $dst
+          Write-Host "Icon created: $dst"
+
+      - name: Build Windows installer
+        working-directory: smartagent
+        run: ./gradlew :investigator:jpackageWindows
+        shell: pwsh
+
+      - name: Upload installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: Investigator-Windows-${{ github.ref_name }}
+          path: smartagent/investigator/build/dist/Investigator-*.exe
+          if-no-files-found: error
