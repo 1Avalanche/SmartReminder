@@ -58,7 +58,9 @@ tasks.register("jpackageDmg") {
 
         appDir.deleteRecursively()
 
-        run(
+        val iconFile = projectDir.resolve("Investigator.icns")
+
+        val jpackageArgs = mutableListOf(
             "jpackage",
             "--type", "app-image",
             "--name", "Investigator",
@@ -70,6 +72,9 @@ tasks.register("jpackageDmg") {
             "--app-version", "1.0.0",
             "--vendor", "SmartAgent"
         )
+        if (iconFile.exists()) jpackageArgs.addAll(listOf("--icon", iconFile.absolutePath))
+
+        run(*jpackageArgs.toTypedArray())
 
         val macosDir = appDir.resolve("Contents/MacOS")
         macosDir.resolve("Investigator").renameTo(macosDir.resolve("Investigator_jvm"))
