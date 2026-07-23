@@ -1,0 +1,17 @@
+# Changelog
+
+## 2026-07-23 — Anastasiya Anisimova (branch: main)
+
+> "build win action"
+> "Create push-action.yml"
+> "Update ai-review.yml"
+> "Update ai-review.yml"
+> "Create ai-review.yml"
+> "Update test-telegram.yml"
+> "Update test-telegram.yml"
+> "Update test-telegram.yml"
+> "Update test-telegram.yml"
+> "Create test-telegram.yml"
+> "add ask deepseek"
+> "add logger"
+> "init"
