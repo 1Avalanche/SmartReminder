@@ -19,10 +19,6 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Install WiX Toolset
-        run: choco install wixtoolset --version 3.14.0 -y
-        shell: pwsh
-
       - name: Create Windows icon
         shell: pwsh
         run: |
