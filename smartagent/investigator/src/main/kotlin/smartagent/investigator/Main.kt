@@ -53,6 +53,7 @@ fun main() {
     val config = runCatching { InvestigatorConfig.load() }.getOrElse { e ->
         println("${CYAN}Ошибка конфигурации: ${e.message}$RESET")
         println("Проверьте local.properties: UI_REPO, INVASTIGATOR_OWNERR, GITHUB_CORP_TOKEN")
+        waitForExit()
         return
     }
 
@@ -62,6 +63,7 @@ fun main() {
 
     if (availableModels.isEmpty()) {
         println("${CYAN}Не найден ни один доступный API ключ (GPU_STACK_API_KEY + GPU_STACK_URL).$RESET")
+        waitForExit()
         return
     }
 
@@ -74,6 +76,7 @@ fun main() {
             println("${CYAN}Docker не установлен.$RESET")
             println("Установите Docker Desktop: https://docs.docker.com/desktop/mac/install/")
             println("После установки запустите Docker Desktop и повторите запуск.")
+            waitForExit()
             return
         }
         DockerChecker.Result.NotRunning -> {
@@ -87,6 +90,7 @@ fun main() {
                 println(" Готов.$RESET")
             } else {
                 println("\n${CYAN}Docker не запустился автоматически. Запустите Docker Desktop вручную и повторите.$RESET")
+                waitForExit()
                 return
             }
         }
@@ -107,6 +111,7 @@ fun main() {
     }.getOrElse { e ->
         println("${CYAN}Не удалось подключиться к GitHub MCP: ${e.message}$RESET")
         println("Проверьте GITHUB_CORP_TOKEN и Docker.")
+        waitForExit()
         return
     }
 
@@ -338,6 +343,12 @@ private fun safeHandle(block: () -> OrchestratorResponse): OrchestratorResponse 
         System.err.println("[main] Orchestrator error: ${e.message}")
         OrchestratorResponse.FinalAnswer("Произошла ошибка: ${e.message}", isError = true)
     }
+
+private fun waitForExit() {
+    println("${GRAY}Нажмите Enter для выхода...$RESET")
+    System.out.flush()
+    readLine()
+}
 
 private fun formatElapsed(ms: Long): String =
     if (ms < 1000) "${ms}ms" else "${"%.1f".format(ms / 1000.0)}s"
