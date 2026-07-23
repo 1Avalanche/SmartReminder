@@ -34,6 +34,12 @@ jobs:
         run: ./gradlew :investigator:jpackageWindows
         shell: pwsh
 
+      - name: List dist directory
+        shell: pwsh
+        run: |
+          Write-Host "=== dist ==="
+          Get-ChildItem -Recurse smartagent\investigator\build\dist | Select-Object FullName
+
       - name: Upload installer
         uses: actions/upload-artifact@v6
         with:
