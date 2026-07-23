@@ -29,18 +29,19 @@ class DockerChecker(
             os.contains("mac") -> listOf("open", "-a", "Docker")
             os.contains("win") -> {
                 val localAppData = System.getenv("LOCALAPPDATA") ?: ""
-                val path = if (localAppData.isNotEmpty())
-                    "$localAppData\\Programs\\Docker\\Docker\\Docker Desktop.exe"
-                else
+                val programFiles = System.getenv("ProgramFiles") ?: "C:\\Program Files"
+                listOf(
+                    "$localAppData\\Programs\\Docker\\Docker\\Docker Desktop.exe",
+                    "$programFiles\\Docker\\Docker\\Docker Desktop.exe",
                     "C:\\Program Files\\Docker\\Docker\\Docker Desktop.exe"
-                listOf(path)
+                ).firstOrNull { java.io.File(it).exists() }?.let { listOf(it) } ?: return false
             }
             else -> return false
         }
 
         if (!launcher(cmd)) return false
 
-        repeat(30) {
+        repeat(90) {
             if (delayMs > 0) Thread.sleep(delayMs)
             onProgress()
             if (runner(arrayOf("docker", "info")) == 0) return true

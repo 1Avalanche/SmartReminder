@@ -33,6 +33,10 @@ private sealed class ReplState {
 }
 
 fun main() {
+    if (System.getProperty("os.name")?.lowercase()?.contains("win") == true) {
+        runCatching { ProcessBuilder("cmd", "/c", "chcp", "65001").start().waitFor() }
+    }
+
     val logFile = File(System.getProperty("user.home"), ".config/smartagent/startup.log")
     runCatching {
         logFile.parentFile?.mkdirs()
@@ -42,7 +46,7 @@ fun main() {
             override fun write(b: Int) { consoleOut.write(b); fileOut.write(b) }
             override fun write(b: ByteArray, off: Int, len: Int) { consoleOut.write(b, off, len); fileOut.write(b, off, len) }
             override fun flush() { consoleOut.flush(); fileOut.flush() }
-        }, true))
+        }, true, Charsets.UTF_8))
         System.out.println("=== Investigator start: ${LocalDateTime.now()} ===")
     }
 
@@ -87,6 +91,14 @@ fun main() {
             }
         }
         DockerChecker.Result.Ok -> Unit
+    }
+
+    val imagePresent = ProcessBuilder("docker", "image", "inspect", "ghcr.io/github/github-mcp-server")
+        .redirectErrorStream(true).start().waitFor() == 0
+    if (!imagePresent) {
+        println("${CYAN}Загружаю Docker-образ GitHub MCP (первый запуск, может занять несколько минут)...$RESET")
+        ProcessBuilder("docker", "pull", "ghcr.io/github/github-mcp-server")
+            .inheritIO().start().waitFor()
     }
 
     println("${CYAN}Подключение к GitHub MCP...$RESET")

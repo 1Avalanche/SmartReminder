@@ -148,7 +148,10 @@ tasks.register("jpackageWindows") {
             "--win-shortcut",
             "--win-menu",
             "--java-options", "-Dinvestigator.config=\$APPDIR/.properties",
-            "--java-options", "-Dinvestigator.channels=\$APPDIR/channels.json"
+            "--java-options", "-Dinvestigator.channels=\$APPDIR/channels.json",
+            "--java-options", "-Dfile.encoding=UTF-8",
+            "--java-options", "-Dstdout.encoding=UTF-8",
+            "--java-options", "-Dstderr.encoding=UTF-8"
         )
         if (iconFile.exists()) args.addAll(listOf("--icon", iconFile.absolutePath))
 
