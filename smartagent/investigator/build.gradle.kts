@@ -131,10 +131,11 @@ tasks.register("jpackageWindows") {
             ?.copyTo(staging.resolve("channels.json"), overwrite = true)
 
         val iconFile = projectDir.resolve("Investigator.ico")
+        val appImageDir = distDir.resolve("Investigator")
 
         val args = mutableListOf(
             "jpackage",
-            "--type", "exe",
+            "--type", "app-image",
             "--name", "Investigator",
             "--input", staging.absolutePath,
             "--main-jar", "investigator.jar",
@@ -142,15 +143,19 @@ tasks.register("jpackageWindows") {
             "--app-version", "1.0.0",
             "--vendor", "SmartAgent",
             "--win-console",
-            "--win-dir-chooser",
-            "--win-shortcut",
-            "--win-menu",
-            "--java-options", "-Dinvestigator.config=\$APPDIR\\.properties",
-            "--java-options", "-Dinvestigator.channels=\$APPDIR\\channels.json"
+            "--java-options", "-Dinvestigator.config=\$APPDIR/.properties",
+            "--java-options", "-Dinvestigator.channels=\$APPDIR/channels.json"
         )
         if (iconFile.exists()) args.addAll(listOf("--icon", iconFile.absolutePath))
 
+        appImageDir.deleteRecursively()
         run(*args.toTypedArray())
+
+        val zipFile = distDir.resolve("Investigator-windows.zip")
+        zipFile.delete()
+        run("powershell", "-Command",
+            "Compress-Archive -Path '${appImageDir.absolutePath}' -DestinationPath '${zipFile.absolutePath}'"
+        )
     }
 }
 
