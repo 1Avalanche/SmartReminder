@@ -109,6 +109,7 @@ object McpManager {
             ?: System.getenv("GITHUB_CORP_HOST")
         if (githubToken != null) {
             val resolvedHost = githubHost ?: "https://github.lmru.tech"
+            val isWindows = System.getProperty("os.name", "").lowercase().contains("win")
             add(
                 McpServerConfig(
                     name = "github",
@@ -119,7 +120,10 @@ object McpManager {
                         "ghcr.io/github/github-mcp-server"
                     ),
                     workDir = cwd,
-                    autoConnect = true
+                    autoConnect = true,
+                    // On Windows, Docker Desktop (WSL2) closes stdin pipe on idle;
+                    // send initialize immediately instead of waiting 2 s
+                    startupDelayMs = if (isWindows) 0L else 2_000L
                 )
             )
         }
