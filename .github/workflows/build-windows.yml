@@ -1,4 +1,4 @@
-name: Build Windows App
+name: Build Windows Installer
 
 on:
   workflow_dispatch:
@@ -13,10 +13,10 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - name: Set up Java 17
+      - name: Set up Java 21
         uses: actions/setup-java@v5
         with:
-          java-version: '17'
+          java-version: '21'
           distribution: 'temurin'
 
       - name: Create Windows icon
@@ -29,7 +29,17 @@ jobs:
             $dst
           Write-Host "Icon created: $dst"
 
-      - name: Build Windows app
+      - name: Add WiX to PATH
+        shell: pwsh
+        run: |
+          $wix = Get-ChildItem "C:\Program Files (x86)" -Filter "WiX Toolset*" -Directory |
+                 Sort-Object Name -Descending | Select-Object -First 1
+          if ($wix) {
+            "$($wix.FullName)\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+            Write-Host "WiX found: $($wix.FullName)"
+          } else { Write-Error "WiX not found" }
+
+      - name: Build Windows installer
         working-directory: smartagent
         run: ./gradlew :investigator:jpackageWindows
         shell: bash
@@ -41,9 +51,9 @@ jobs:
           Get-ChildItem -Recurse smartagent\investigator\build\dist -ErrorAction SilentlyContinue |
             Select-Object FullName
 
-      - name: Upload app
+      - name: Upload installer
         uses: actions/upload-artifact@v6
         with:
           name: Investigator-Windows-${{ github.ref_name }}
-          path: smartagent/investigator/build/dist/Investigator-windows.zip
+          path: smartagent/investigator/build/dist/Investigator-*.exe
           if-no-files-found: error
