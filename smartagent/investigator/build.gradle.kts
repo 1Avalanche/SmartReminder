@@ -151,6 +151,14 @@ tasks.register("jpackageWindows") {
         appImageDir.deleteRecursively()
         run(*args.toTypedArray())
 
+        appImageDir.resolve("Start-Investigator.bat").writeText(
+            "@echo off\r\n" +
+            "\"%~dp0Investigator.exe\"\r\n" +
+            "echo.\r\n" +
+            "echo --- Press any key to close ---\r\n" +
+            "pause > nul\r\n"
+        )
+
         val zipFile = distDir.resolve("Investigator-windows.zip")
         zipFile.delete()
         run("powershell", "-Command",
