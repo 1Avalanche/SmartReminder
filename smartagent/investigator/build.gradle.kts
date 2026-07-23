@@ -125,6 +125,10 @@ tasks.register("jpackageWindows") {
         val distDir  = buildDir.resolve("dist").also { it.mkdirs() }
 
         shadowJarFile.get().asFile.copyTo(staging.resolve("investigator.jar"), overwrite = true)
+        projectDir.resolve(".properties").takeIf { it.exists() }
+            ?.copyTo(staging.resolve(".properties"), overwrite = true)
+        rootProject.projectDir.parentFile.resolve("channels.json").takeIf { it.exists() }
+            ?.copyTo(staging.resolve("channels.json"), overwrite = true)
 
         val iconFile = projectDir.resolve("Investigator.ico")
 
@@ -137,9 +141,12 @@ tasks.register("jpackageWindows") {
             "--dest", distDir.absolutePath,
             "--app-version", "1.0.0",
             "--vendor", "SmartAgent",
+            "--win-console",
             "--win-dir-chooser",
             "--win-shortcut",
-            "--win-menu"
+            "--win-menu",
+            "--java-options", "-Dinvestigator.config=\$APPDIR\\.properties",
+            "--java-options", "-Dinvestigator.channels=\$APPDIR\\channels.json"
         )
         if (iconFile.exists()) args.addAll(listOf("--icon", iconFile.absolutePath))
 
