@@ -41,8 +41,8 @@ jobs:
 
       - name: Build Windows installer
         working-directory: smartagent
-        run: .\gradlew.bat :investigator:jpackageWindows
-        shell: pwsh
+        run: ./gradlew :investigator:jpackageWindows
+        shell: bash
 
       - name: List dist directory
         shell: pwsh
