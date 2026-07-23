@@ -51,7 +51,8 @@ tasks.register("jpackageDmg") {
         val dmgFile  = distDir.resolve("Investigator-1.0.0.dmg")
 
         shadowJarFile.get().asFile.copyTo(staging.resolve("investigator.jar"), overwrite = true)
-        projectDir.resolve(".properties").takeIf { it.exists() }
+        (projectDir.resolve(".properties").takeIf { it.exists() }
+            ?: projectDir.resolve("src/.properties").takeIf { it.exists() })
             ?.copyTo(staging.resolve(".properties"), overwrite = true)
         rootProject.projectDir.parentFile.resolve("channels.json").takeIf { it.exists() }
             ?.copyTo(staging.resolve("channels.json"), overwrite = true)
@@ -125,7 +126,8 @@ tasks.register("jpackageWindows") {
         val distDir  = buildDir.resolve("dist").also { it.mkdirs() }
 
         shadowJarFile.get().asFile.copyTo(staging.resolve("investigator.jar"), overwrite = true)
-        projectDir.resolve(".properties").takeIf { it.exists() }
+        (projectDir.resolve(".properties").takeIf { it.exists() }
+            ?: projectDir.resolve("src/.properties").takeIf { it.exists() })
             ?.copyTo(staging.resolve(".properties"), overwrite = true)
         rootProject.projectDir.parentFile.resolve("channels.json").takeIf { it.exists() }
             ?.copyTo(staging.resolve("channels.json"), overwrite = true)

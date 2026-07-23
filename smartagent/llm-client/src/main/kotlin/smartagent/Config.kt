@@ -20,7 +20,11 @@ object Config {
         val props = mutableMapOf<String, String>()
         val file = listOfNotNull(
             System.getProperty("investigator.config"),
+            ".properties",
+            "src/.properties",
             "local.properties",
+            "../.properties",
+            "../src/.properties",
             "../local.properties",
             configFile.absolutePath
         ).firstOrNull { File(it).exists() }?.let { File(it) }

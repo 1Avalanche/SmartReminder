@@ -17,9 +17,9 @@ data class InvestigatorConfig(
             val props = Config.localProperties
 
             val owner = props["INVASTIGATOR_OWNERR"]
-                ?: error("INVASTIGATOR_OWNERR not set in local.properties")
+                ?: error("INVASTIGATOR_OWNERR not set (проверьте .properties или ~/.config/smartagent/local.properties)")
             val uiRepo = props["UI_REPO"]
-                ?: error("UI_REPO not set in local.properties")
+                ?: error("UI_REPO not set (проверьте .properties или ~/.config/smartagent/local.properties)")
 
             val channels = loadChannels()
 
