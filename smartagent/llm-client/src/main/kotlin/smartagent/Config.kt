@@ -18,7 +18,7 @@ object Config {
 
     val localProperties: Map<String, String> by lazy {
         val props = mutableMapOf<String, String>()
-        val file = listOfNotNull(
+        val searchPaths = listOfNotNull(
             System.getProperty("investigator.config"),
             ".properties",
             "src/.properties",
@@ -27,7 +27,15 @@ object Config {
             "../src/.properties",
             "../local.properties",
             configFile.absolutePath
-        ).firstOrNull { File(it).exists() }?.let { File(it) }
+        )
+        val file = searchPaths.firstOrNull { File(it).exists() }?.let { File(it) }
+        if (file != null) {
+            println("[config] loaded: ${file.absolutePath}")
+        } else {
+            println("[config] .properties not found. Searched:")
+            searchPaths.forEach { println("[config]   ${File(it).absolutePath}") }
+            println("[config] Create config at: ${configFile.absolutePath}")
+        }
         file?.readLines()?.forEach { line ->
             val trimmed = line.trim()
             if (trimmed.isNotBlank() && !trimmed.startsWith("#")) {
