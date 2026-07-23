@@ -42,14 +42,14 @@ jobs:
       - name: Create .properties from secrets
         shell: pwsh
         run: |
-          @"
-GITHUB_CORP_TOKEN=${{ secrets.INVESTIGATOR_GITHUB_CORP_TOKEN }}
-GITHUB_CORP_HOST=${{ secrets.INVESTIGATOR_GITHUB_CORP_HOST }}
-INVASTIGATOR_OWNERR=${{ secrets.INVESTIGATOR_OWNER }}
-UI_REPO=${{ secrets.INVESTIGATOR_UI_REPO }}
-GPU_STACK_API_KEY=${{ secrets.INVESTIGATOR_GPU_STACK_API_KEY }}
-GPU_STACK_URL=${{ secrets.INVESTIGATOR_GPU_STACK_URL }}
-"@ | Set-Content -Path "smartagent\investigator\.properties" -Encoding utf8
+          @(
+            "GITHUB_CORP_TOKEN=${{ secrets.INVESTIGATOR_GITHUB_CORP_TOKEN }}",
+            "GITHUB_CORP_HOST=${{ secrets.INVESTIGATOR_GITHUB_CORP_HOST }}",
+            "INVASTIGATOR_OWNERR=${{ secrets.INVESTIGATOR_OWNER }}",
+            "UI_REPO=${{ secrets.INVESTIGATOR_UI_REPO }}",
+            "GPU_STACK_API_KEY=${{ secrets.INVESTIGATOR_GPU_STACK_API_KEY }}",
+            "GPU_STACK_URL=${{ secrets.INVESTIGATOR_GPU_STACK_URL }}"
+          ) | Set-Content -Path "smartagent\investigator\.properties" -Encoding utf8
 
       - name: Build Windows installer
         working-directory: smartagent
