@@ -7,6 +7,9 @@ import smartagent.investigator.model.UiSearchResult
 import smartagent.mcp_handler.McpManager
 import java.io.File
 import java.io.FileInputStream
+import java.io.OutputStream
+import java.io.PrintStream
+import java.time.LocalDateTime
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -30,6 +33,19 @@ private sealed class ReplState {
 }
 
 fun main() {
+    val logFile = File(System.getProperty("user.home"), ".config/smartagent/startup.log")
+    runCatching {
+        logFile.parentFile?.mkdirs()
+        val consoleOut = System.out
+        val fileOut = logFile.outputStream()
+        System.setOut(PrintStream(object : OutputStream() {
+            override fun write(b: Int) { consoleOut.write(b); fileOut.write(b) }
+            override fun write(b: ByteArray, off: Int, len: Int) { consoleOut.write(b, off, len); fileOut.write(b, off, len) }
+            override fun flush() { consoleOut.flush(); fileOut.flush() }
+        }, true))
+        System.out.println("=== Investigator start: ${LocalDateTime.now()} ===")
+    }
+
     val config = runCatching { InvestigatorConfig.load() }.getOrElse { e ->
         println("${CYAN}Ошибка конфигурации: ${e.message}$RESET")
         println("Проверьте local.properties: UI_REPO, INVASTIGATOR_OWNERR, GITHUB_CORP_TOKEN")
