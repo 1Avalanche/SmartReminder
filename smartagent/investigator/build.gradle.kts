@@ -151,7 +151,8 @@ tasks.register("jpackageWindows") {
             "--java-options", "-Dinvestigator.channels=\$APPDIR/channels.json",
             "--java-options", "-Dfile.encoding=UTF-8",
             "--java-options", "-Dstdout.encoding=UTF-8",
-            "--java-options", "-Dstderr.encoding=UTF-8"
+            "--java-options", "-Dstderr.encoding=UTF-8",
+            "--java-options", "--enable-native-access=ALL-UNNAMED"
         )
         if (iconFile.exists()) args.addAll(listOf("--icon", iconFile.absolutePath))
 

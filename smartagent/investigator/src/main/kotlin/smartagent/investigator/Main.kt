@@ -9,6 +9,11 @@ import java.io.File
 import java.io.FileInputStream
 import java.io.OutputStream
 import java.io.PrintStream
+import java.lang.foreign.Arena
+import java.lang.foreign.FunctionDescriptor
+import java.lang.foreign.Linker
+import java.lang.foreign.SymbolLookup
+import java.lang.foreign.ValueLayout
 import java.time.LocalDateTime
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.atomic.AtomicBoolean
@@ -33,9 +38,7 @@ private sealed class ReplState {
 }
 
 fun main() {
-    if (System.getProperty("os.name")?.lowercase()?.contains("win") == true) {
-        runCatching { ProcessBuilder("cmd", "/c", "chcp", "65001").start().waitFor() }
-    }
+    setupWindowsConsole()
 
     val logFile = File(System.getProperty("user.home"), ".config/smartagent/startup.log")
     runCatching {
@@ -110,6 +113,9 @@ fun main() {
         McpManager.initServer("github")
     }.getOrElse { e ->
         println("${CYAN}Не удалось подключиться к GitHub MCP: ${e.message}$RESET")
+        McpManager.getSession("github")?.drainServerOutput()?.forEach { line ->
+            println("${GRAY}  [docker stderr] $line$RESET")
+        }
         println("Проверьте GITHUB_CORP_TOKEN и Docker.")
         waitForExit()
         return
@@ -343,6 +349,23 @@ private fun safeHandle(block: () -> OrchestratorResponse): OrchestratorResponse 
         System.err.println("[main] Orchestrator error: ${e.message}")
         OrchestratorResponse.FinalAnswer("Произошла ошибка: ${e.message}", isError = true)
     }
+
+private fun setupWindowsConsole() {
+    if (!System.getProperty("os.name", "").lowercase().contains("win")) return
+    runCatching {
+        val linker = Linker.nativeLinker()
+        Arena.ofConfined().use { arena ->
+            val kernel32 = SymbolLookup.libraryLookup("kernel32", arena)
+            val desc = FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.JAVA_INT)
+            kernel32.find("SetConsoleOutputCP").ifPresent { sym ->
+                linker.downcallHandle(sym, desc).invokeExact(65001) as Int
+            }
+            kernel32.find("SetConsoleCP").ifPresent { sym ->
+                linker.downcallHandle(sym, desc).invokeExact(65001) as Int
+            }
+        }
+    }
+}
 
 private fun waitForExit() {
     println("${GRAY}Нажмите Enter для выхода...$RESET")
