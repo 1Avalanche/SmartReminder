@@ -5,6 +5,10 @@ import smartagent.ModelConfig
 import smartagent.OkHttpLLMGateway
 import smartagent.investigator.model.UiSearchResult
 import smartagent.mcp_handler.McpManager
+import java.io.File
+import java.io.FileInputStream
+import java.util.concurrent.CompletableFuture
+import java.util.concurrent.atomic.AtomicBoolean
 
 private const val PROMPT = "investigator> "
 private const val RESET = "\u001B[0m"
@@ -13,6 +17,11 @@ private const val CYAN = "\u001B[36m"
 private const val GRAY = "\u001B[90m"
 
 private val MODEL_PRIORITY = listOf(ModelConfig.DeepSeekFlash, ModelConfig.Qwen)
+
+@Volatile private var isCancelled = false
+
+private val isTty: Boolean = File("/dev/tty").exists()
+private val ttyIn: FileInputStream? = if (isTty) runCatching { FileInputStream("/dev/tty") }.getOrNull() else null
 
 private sealed class ReplState {
     object Idle : ReplState()
@@ -68,6 +77,8 @@ fun main() {
     val fallbackOrchestrator = fallbackModel?.let { InvestigatorOrchestrator(config, githubSession, gateway, it) }
     val session = InvestigatorSession()
 
+    enableRawMode()
+
     println("${CYAN}Investigator готов. UI репозиторий: ${config.owner}/${config.uiRepo}$RESET")
     print("${GRAY}Модели: ${primaryModel.apiModelId}")
     if (fallbackModel != null) print(" → ${fallbackModel.apiModelId} (запасная)")
@@ -78,8 +89,7 @@ fun main() {
     var state: ReplState = ReplState.Idle
 
     while (true) {
-        print(PROMPT)
-        val input = readLine()?.trim() ?: break
+        val input = readLineRaw(PROMPT)?.trim() ?: continue
 
         if (input.isBlank()) continue
 
@@ -89,8 +99,7 @@ fun main() {
                 break
             }
             "clear" -> {
-                print("Очистить контекст диалога? [y/N]: ")
-                val confirm = readLine()?.trim()?.lowercase()
+                val confirm = readLineRaw("Очистить контекст диалога? [y/N]: ")?.trim()?.lowercase()
                 if (confirm == "y" || confirm == "yes") {
                     session.clear()
                     state = ReplState.Idle
@@ -110,10 +119,14 @@ fun main() {
                     state = ReplState.Idle
                     println("${GRAY}Ищу в канале...$RESET")
                     val t0 = System.currentTimeMillis()
-                    val (response, usedModel) = handleWithFallback(
-                        primaryModel, primaryOrchestrator, fallbackModel, fallbackOrchestrator
-                    ) { it.handleClarification(s.options[idx - 1], s.pendingQuery, session) }
-                    state = processResponse(response, session, s.pendingQuery, System.currentTimeMillis() - t0, usedModel)
+                    val result = runCancellable {
+                        handleWithFallback(
+                            primaryModel, primaryOrchestrator, fallbackModel, fallbackOrchestrator
+                        ) { it.handleClarification(s.options[idx - 1], s.pendingQuery, session) }
+                    }
+                    if (result != null) {
+                        state = processResponse(result.first, session, s.pendingQuery, System.currentTimeMillis() - t0, result.second)
+                    }
                 } else {
                     println("${YELLOW}Введите номер от 1 до ${s.options.size}.$RESET")
                 }
@@ -124,10 +137,14 @@ fun main() {
                 if (idx != null && idx in 1..s.candidates.size) {
                     state = ReplState.Idle
                     val t0 = System.currentTimeMillis()
-                    val response = safeHandle {
-                        primaryOrchestrator.handleDefinitionSelection(s.candidates[idx - 1], session)
+                    val result = runCancellable {
+                        safeHandle {
+                            primaryOrchestrator.handleDefinitionSelection(s.candidates[idx - 1], session)
+                        }
                     }
-                    state = processResponse(response, session, s.pendingQuery, System.currentTimeMillis() - t0, primaryModel)
+                    if (result != null) {
+                        state = processResponse(result, session, s.pendingQuery, System.currentTimeMillis() - t0, primaryModel)
+                    }
                 } else {
                     println("${YELLOW}Введите номер от 1 до ${s.candidates.size}.$RESET")
                 }
@@ -136,15 +153,128 @@ fun main() {
             ReplState.Idle -> {
                 println("${GRAY}Обрабатываю...$RESET")
                 val t0 = System.currentTimeMillis()
-                val (response, usedModel) = handleWithFallback(
-                    primaryModel, primaryOrchestrator, fallbackModel, fallbackOrchestrator
-                ) { it.handle(input, session) }
-                state = processResponse(response, session, input, System.currentTimeMillis() - t0, usedModel)
+                val result = runCancellable {
+                    handleWithFallback(
+                        primaryModel, primaryOrchestrator, fallbackModel, fallbackOrchestrator
+                    ) { it.handle(input, session) }
+                }
+                if (result != null) {
+                    state = processResponse(result.first, session, input, System.currentTimeMillis() - t0, result.second)
+                }
             }
         }
     }
 
     McpManager.getSession("github")?.close()
+}
+
+private fun stty(vararg args: String) {
+    runCatching {
+        ProcessBuilder("/bin/sh", "-c", "stty ${args.joinToString(" ")} </dev/tty")
+            .redirectErrorStream(true)
+            .start()
+            .waitFor()
+    }
+}
+
+private fun enableRawMode() {
+    if (!isTty || ttyIn == null) return
+    stty("-echo", "-icanon", "min", "1", "time", "0")
+    Runtime.getRuntime().addShutdownHook(Thread { stty("echo", "icanon") })
+}
+
+private fun readLineRaw(prompt: String): String? {
+    val tty = ttyIn ?: return readLine()
+    print(prompt)
+    System.out.flush()
+    val buf = StringBuilder()
+    while (true) {
+        val cp = readUtf8CodePoint(tty)
+        when (cp) {
+            -1 -> return null
+            0x1b -> {
+                // Drain any escape sequence bytes (arrow keys etc.)
+                Thread.sleep(10)
+                while (tty.available() > 0) tty.read()
+                print("\n")
+                System.out.flush()
+                return null
+            }
+            0x0d, 0x0a -> {
+                print("\n")
+                System.out.flush()
+                return buf.toString()
+            }
+            0x7f, 0x08 -> {
+                if (buf.isNotEmpty()) {
+                    val charCount = Character.charCount(buf.codePointBefore(buf.length))
+                    buf.delete(buf.length - charCount, buf.length)
+                    print("\b \b")
+                    System.out.flush()
+                }
+            }
+            0x03 -> {
+                print("\n")
+                System.out.flush()
+                System.exit(0)
+            }
+            else -> {
+                if (cp >= 0x20) {
+                    val s = String(Character.toChars(cp))
+                    buf.append(s)
+                    print(s)
+                    System.out.flush()
+                }
+            }
+        }
+    }
+}
+
+private fun <T> runCancellable(block: () -> T): T? {
+    val tty = ttyIn ?: return block()
+
+    isCancelled = false
+    val future = CompletableFuture<T>()
+
+    val worker = Thread {
+        try {
+            future.complete(block())
+        } catch (_: InterruptedException) {
+            future.cancel(false)
+        } catch (e: Throwable) {
+            future.completeExceptionally(e)
+        }
+    }
+    worker.isDaemon = true
+    worker.start()
+
+    while (!future.isDone) {
+        try {
+            if (tty.available() > 0) {
+                val b = tty.read()
+                if (b == 0x1b) {
+                    Thread.sleep(10)
+                    while (tty.available() > 0) tty.read()
+                    isCancelled = true
+                    worker.interrupt()
+                    print("\n${GRAY}Запрос отменён.$RESET\n\n")
+                    System.out.flush()
+                    worker.join(5000)
+                    return null
+                }
+            }
+            Thread.sleep(50)
+        } catch (_: InterruptedException) {
+            break
+        }
+    }
+
+    if (future.isCancelled) return null
+    return try {
+        future.get()
+    } catch (e: java.util.concurrent.ExecutionException) {
+        throw e.cause ?: e
+    }
 }
 
 private fun handleWithFallback(
@@ -157,6 +287,7 @@ private fun handleWithFallback(
     val primary = safeHandle { block(primaryOrchestrator) }
     if (primary is OrchestratorResponse.FinalAnswer && primary.isError
         && fallbackOrchestrator != null && fallbackModel != null
+        && !isCancelled
     ) {
         println("${CYAN}${primaryModel.apiModelId} не нашел ответ, отдал на обработку ${fallbackModel.apiModelId}$RESET")
         return safeHandle { block(fallbackOrchestrator) } to fallbackModel

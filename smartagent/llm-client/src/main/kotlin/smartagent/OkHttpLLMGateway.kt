@@ -52,7 +52,9 @@ class OkHttpLLMGateway(
                 ?: return@runCatching null
             LLMGateway.Response(content, chatResponse.usage)
         }.onFailure { e ->
-            println("[LLM] Request failed: ${e::class.simpleName}: ${e.message}")
+            if (e !is java.io.InterruptedIOException && e !is InterruptedException) {
+                println("[LLM] Request failed: ${e::class.simpleName}: ${e.message}")
+            }
         }.getOrNull()
     }
 }
