@@ -189,7 +189,7 @@ class InvestigatorOrchestrator(
         }
 
         val history = session.buildHistory()
-        println("${GRAY}Ищу в UI-репозитории...$RESET")
+        println("${GRAY}Ищу в фронт-репозитории...$RESET")
         val (uiOutput, uiFiles) = uiSearchAgent.search(query, emptyList(), session.uiFileHints)
 
         return when (uiOutput) {
@@ -208,7 +208,7 @@ class InvestigatorOrchestrator(
 
             is UiAgentOutput.SearchError ->
                 OrchestratorResponse.FinalAnswer(
-                    "⚠️ Ошибка при поиске в UI-репозитории: ${uiOutput.cause}",
+                    "⚠️ Ошибка при поиске в фронт-репозитории: ${uiOutput.cause}",
                     isError = true
                 )
 

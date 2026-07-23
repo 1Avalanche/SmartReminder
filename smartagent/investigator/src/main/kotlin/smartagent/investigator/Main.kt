@@ -79,7 +79,7 @@ fun main() {
 
     enableRawMode()
 
-    println("${CYAN}Investigator готов. UI репозиторий: ${config.owner}/${config.uiRepo}$RESET")
+    println("${CYAN}Investigator готов. Фронт-репозиторий: ${config.owner}/${config.uiRepo}$RESET")
     print("${GRAY}Модели: ${primaryModel.apiModelId}")
     if (fallbackModel != null) print(" → ${fallbackModel.apiModelId} (запасная)")
     println(RESET)
