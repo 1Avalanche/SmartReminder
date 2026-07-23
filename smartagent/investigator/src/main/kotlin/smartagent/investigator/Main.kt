@@ -48,7 +48,8 @@ fun main() {
     val primaryModel = availableModels.first()
     val fallbackModel = availableModels.getOrNull(1)
 
-    when (DockerChecker.check()) {
+    val dockerChecker = DockerChecker()
+    when (dockerChecker.check()) {
         DockerChecker.Result.NotInstalled -> {
             println("${CYAN}Docker не установлен.$RESET")
             println("Установите Docker Desktop: https://docs.docker.com/desktop/mac/install/")
@@ -56,9 +57,18 @@ fun main() {
             return
         }
         DockerChecker.Result.NotRunning -> {
-            println("${CYAN}Docker установлен, но демон не запущен.$RESET")
-            println("Запустите Docker Desktop и повторите.")
-            return
+            print("${CYAN}Запускаю Docker")
+            System.out.flush()
+            val started = dockerChecker.startAndWait {
+                print("...")
+                System.out.flush()
+            }
+            if (started) {
+                println(" Готов.$RESET")
+            } else {
+                println("\n${CYAN}Docker не запустился автоматически. Запустите Docker Desktop вручную и повторите.$RESET")
+                return
+            }
         }
         DockerChecker.Result.Ok -> Unit
     }
@@ -83,7 +93,7 @@ fun main() {
     print("${GRAY}Модели: ${primaryModel.apiModelId}")
     if (fallbackModel != null) print(" → ${fallbackModel.apiModelId} (запасная)")
     println(RESET)
-    println("${GRAY}Команды: clear, exit/quit$RESET")
+    println("${GRAY}Команды: clear, exit/quit, esc -  для отмены$RESET")
     println()
 
     var state: ReplState = ReplState.Idle
