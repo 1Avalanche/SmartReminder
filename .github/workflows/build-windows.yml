@@ -1,4 +1,4 @@
-name: Build Windows Installer
+name: Build Windows App
 
 on:
   workflow_dispatch:
@@ -29,17 +29,7 @@ jobs:
             $dst
           Write-Host "Icon created: $dst"
 
-      - name: Add WiX to PATH
-        shell: pwsh
-        run: |
-          $wix = Get-ChildItem "C:\Program Files (x86)" -Filter "WiX Toolset*" -Directory |
-                 Sort-Object Name -Descending | Select-Object -First 1
-          if ($wix) {
-            "$($wix.FullName)\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
-            Write-Host "WiX found: $($wix.FullName)"
-          } else { Write-Error "WiX not found" }
-
-      - name: Build Windows installer
+      - name: Build Windows app
         working-directory: smartagent
         run: ./gradlew :investigator:jpackageWindows
         shell: bash
@@ -51,9 +41,9 @@ jobs:
           Get-ChildItem -Recurse smartagent\investigator\build\dist -ErrorAction SilentlyContinue |
             Select-Object FullName
 
-      - name: Upload installer
+      - name: Upload app
         uses: actions/upload-artifact@v6
         with:
           name: Investigator-Windows-${{ github.ref_name }}
-          path: smartagent/investigator/build/dist/Investigator-*.exe
+          path: smartagent/investigator/build/dist/Investigator-windows.zip
           if-no-files-found: error
