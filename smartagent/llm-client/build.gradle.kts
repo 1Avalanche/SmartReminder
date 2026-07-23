@@ -13,5 +13,5 @@ testFixturesImplementation(libs.kotlinx.serialization.json)
 }
 
 kotlin {
-    jvmToolchain(17)
+    jvmToolchain(21)
 }
