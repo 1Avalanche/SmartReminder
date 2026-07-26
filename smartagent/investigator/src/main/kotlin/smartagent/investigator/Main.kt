@@ -90,13 +90,11 @@ fun main() {
         DockerChecker.Result.Ok -> Unit
     }
 
-    val isWindows = System.getProperty("os.name", "").lowercase().contains("win")
-    val dockerCmd = if (isWindows) listOf("wsl", "docker") else listOf("docker")
-    val imagePresent = ProcessBuilder(dockerCmd + listOf("image", "inspect", "ghcr.io/github/github-mcp-server"))
+    val imagePresent = ProcessBuilder("docker", "image", "inspect", "ghcr.io/github/github-mcp-server")
         .redirectErrorStream(true).start().waitFor() == 0
     if (!imagePresent) {
         println("${CYAN}Загружаю Docker-образ GitHub MCP (первый запуск, может занять несколько минут)...$RESET")
-        ProcessBuilder(dockerCmd + listOf("pull", "ghcr.io/github/github-mcp-server"))
+        ProcessBuilder("docker", "pull", "ghcr.io/github/github-mcp-server")
             .inheritIO().start().waitFor()
     }
 
