@@ -52,7 +52,7 @@ class ProcessTransport(command: List<String>, workDir: String, env: Map<String, 
 
     override fun send(message: String) {
         writer.write(message)
-        writer.newLine()
+        writer.write("\n")  // always LF — MCP server runs in Linux container, \r\n breaks protocol
         writer.flush()
     }
 

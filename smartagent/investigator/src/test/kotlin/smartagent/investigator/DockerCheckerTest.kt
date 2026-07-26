@@ -19,8 +19,9 @@ class DockerCheckerTest {
     private fun checker(
         runner: (Array<out String>) -> Int,
         launcher: (List<String>) -> Boolean = alwaysLaunch(),
-        osName: String = "Mac OS X"
-    ) = DockerChecker(runner = runner, launcher = launcher, osName = osName, delayMs = 0L)
+        osName: String = "Mac OS X",
+        fileExists: (String) -> Boolean = { false }
+    ) = DockerChecker(runner = runner, launcher = launcher, osName = osName, delayMs = 0L, fileExists = fileExists)
 
     // --- check() ---
 
@@ -52,7 +53,7 @@ class DockerCheckerTest {
 
     @Test
     fun `startAndWait returns false when launcher fails`() {
-        val result = checker(runnerReturning(1), launcher = alwaysLaunch(false)).startAndWait {}
+        val result = checker(runnerReturning(1), launcher = alwaysLaunch(false), fileExists = { true }).startAndWait {}
         assertFalse(result)
     }
 
@@ -95,7 +96,12 @@ class DockerCheckerTest {
     fun `startAndWait works on Windows`() {
         var capturedCmd: List<String>? = null
         val launcher: (List<String>) -> Boolean = { cmd -> capturedCmd = cmd; true }
-        checker(runnerReturning(0), launcher = launcher, osName = "Windows 10").startAndWait {}
+        checker(
+            runnerReturning(0),
+            launcher = launcher,
+            osName = "Windows 10",
+            fileExists = { path -> path.contains("Docker Desktop.exe") }
+        ).startAndWait {}
         assertTrue(capturedCmd?.first()?.contains("Docker Desktop.exe") == true)
     }
 }

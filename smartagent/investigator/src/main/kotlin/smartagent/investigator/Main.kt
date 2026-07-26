@@ -112,11 +112,15 @@ fun main() {
     val githubSession = runCatching {
         McpManager.initServer("github")
     }.getOrElse { e ->
-        println("${CYAN}Не удалось подключиться к GitHub MCP: ${e.message}$RESET")
-        McpManager.getSession("github")?.drainServerOutput()?.forEach { line ->
-            println("${GRAY}  [docker stderr] $line$RESET")
+        println("${CYAN}Не удалось подключиться к GitHub MCP [${e.javaClass.simpleName}]: ${e.message}$RESET")
+        e.cause?.let { println("${GRAY}  caused by [${it.javaClass.simpleName}]: ${it.message}$RESET") }
+        val stderrLines = McpManager.getSession("github")?.drainServerOutput() ?: emptyList()
+        if (stderrLines.isEmpty()) {
+            println("${GRAY}  [docker stderr] <пусто — процесс мог не запуститься>$RESET")
+        } else {
+            stderrLines.forEach { line -> println("${GRAY}  [docker stderr] $line$RESET") }
         }
-        println("Проверьте GITHUB_CORP_TOKEN и Docker.")
+        println("Проверьте Docker или обратитесь к разработчику.")
         waitForExit()
         return
     }
