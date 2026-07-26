@@ -83,19 +83,9 @@ fun main() {
             return
         }
         DockerChecker.Result.NotRunning -> {
-            print("${CYAN}Запускаю Docker")
-            System.out.flush()
-            val started = dockerChecker.startAndWait {
-                print("...")
-                System.out.flush()
-            }
-            if (started) {
-                println(" Готов.$RESET")
-            } else {
-                println("\n${CYAN}Docker не запустился автоматически. Запустите Docker Desktop вручную и повторите.$RESET")
-                waitForExit()
-                return
-            }
+            println("${CYAN}Docker не запущен. Запустите Docker Desktop и перезапустите приложение.$RESET")
+            waitForExit()
+            return
         }
         DockerChecker.Result.Ok -> Unit
     }
