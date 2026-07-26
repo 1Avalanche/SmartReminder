@@ -52,8 +52,20 @@ class DockerCheckerTest {
     }
 
     @Test
-    fun `startAndWait returns false when launcher fails`() {
-        val result = checker(runnerReturning(1), launcher = alwaysLaunch(false), fileExists = { true }).startAndWait {}
+    fun `startAndWait returns false when launcher fails on macOS`() {
+        val result = checker(runnerReturning(1), launcher = alwaysLaunch(false)).startAndWait {}
+        assertFalse(result)
+    }
+
+    @Test
+    fun `startAndWait returns false when all Windows launch methods fail`() {
+        // PowerShell fails AND no .exe found
+        val result = checker(
+            runnerReturning(1),
+            launcher = alwaysLaunch(false),
+            osName = "Windows 10",
+            fileExists = { false }
+        ).startAndWait {}
         assertFalse(result)
     }
 
@@ -93,15 +105,25 @@ class DockerCheckerTest {
     }
 
     @Test
-    fun `startAndWait works on Windows`() {
-        var capturedCmd: List<String>? = null
-        val launcher: (List<String>) -> Boolean = { cmd -> capturedCmd = cmd; true }
+    fun `startAndWait uses PowerShell as primary on Windows`() {
+        val calls = mutableListOf<List<String>>()
+        val launcher: (List<String>) -> Boolean = { cmd -> calls.add(cmd); true }
+        checker(runnerReturning(0), launcher = launcher, osName = "Windows 10").startAndWait {}
+        // First call must be PowerShell
+        assertEquals("powershell", calls.first().first())
+        assertTrue(calls.first().contains("Start-Process 'Docker Desktop'").not().let { calls.first().any { it.contains("Start-Process") } })
+    }
+
+    @Test
+    fun `startAndWait falls back to exe when PowerShell fails on Windows`() {
+        var callIdx = 0
+        val launcher: (List<String>) -> Boolean = { _ -> callIdx++ > 0 } // first call (PS) fails, second (.exe) succeeds
         checker(
             runnerReturning(0),
             launcher = launcher,
             osName = "Windows 10",
             fileExists = { path -> path.contains("Docker Desktop.exe") }
         ).startAndWait {}
-        assertTrue(capturedCmd?.first()?.contains("Docker Desktop.exe") == true)
+        assertEquals(2, callIdx) // PS tried + exe tried
     }
 }

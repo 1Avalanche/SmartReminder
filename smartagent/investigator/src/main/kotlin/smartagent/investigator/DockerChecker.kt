@@ -32,35 +32,14 @@ class DockerChecker(
      *  Возвращает true если демон поднялся, false — если нет или ОС не поддерживается. */
     fun startAndWait(onProgress: () -> Unit): Boolean {
         val os = osName.lowercase()
-        val cmd = when {
-            os.contains("mac") -> listOf("open", "-a", "Docker")
-            os.contains("win") -> {
-                val localAppData = System.getenv("LOCALAPPDATA") ?: ""
-                val programFiles = System.getenv("ProgramFiles") ?: "C:\\Program Files"
-                val programFilesX86 = System.getenv("ProgramFiles(x86)") ?: "C:\\Program Files (x86)"
-                val candidates = listOf(
-                    "$localAppData\\Programs\\Docker\\Docker\\Docker Desktop.exe",
-                    "$programFiles\\Docker\\Docker\\Docker Desktop.exe",
-                    "$programFilesX86\\Docker\\Docker\\Docker Desktop.exe",
-                    "C:\\Program Files\\Docker\\Docker\\Docker Desktop.exe",
-                    "C:\\Program Files (x86)\\Docker\\Docker\\Docker Desktop.exe"
-                )
-                println("[DockerChecker] Ищу Docker Desktop, LOCALAPPDATA=$localAppData, ProgramFiles=$programFiles")
-                val found = candidates.firstOrNull { fileExists(it) }
-                if (found == null) {
-                    println("[DockerChecker] Docker Desktop.exe не найден. Проверенные пути:")
-                    candidates.forEach { println("[DockerChecker]   $it") }
-                    return false
-                }
-                println("[DockerChecker] Найден: $found")
-                listOf(found)
-            }
+        val launched = when {
+            os.contains("mac") -> launcher(listOf("open", "-a", "Docker"))
+            os.contains("win") -> launchDockerWindows()
             else -> return false
         }
 
-        println("[DockerChecker] Запускаю: $cmd")
-        if (!launcher(cmd)) {
-            println("[DockerChecker] launcher вернул false — процесс не запустился")
+        if (!launched) {
+            println("[DockerChecker] Не удалось запустить Docker Desktop")
             return false
         }
 
@@ -72,5 +51,36 @@ class DockerChecker(
             if (rc == 0) return true
         }
         return false
+    }
+
+    private fun launchDockerWindows(): Boolean {
+        // Primary: PowerShell Start-Process finds Docker Desktop via App Paths registry — no hardcoded path needed
+        println("[DockerChecker] Пробую запустить Docker через PowerShell Start-Process...")
+        val psLaunched = launcher(listOf("powershell", "-Command", "Start-Process 'Docker Desktop'"))
+        if (psLaunched) {
+            println("[DockerChecker] PowerShell Start-Process: успех")
+            return true
+        }
+
+        // Fallback: search known installation paths
+        println("[DockerChecker] PowerShell не сработал, ищу Docker Desktop.exe...")
+        val localAppData = System.getenv("LOCALAPPDATA") ?: ""
+        val programFiles = System.getenv("ProgramFiles") ?: "C:\\Program Files"
+        val programFilesX86 = System.getenv("ProgramFiles(x86)") ?: "C:\\Program Files (x86)"
+        val candidates = listOf(
+            "$localAppData\\Programs\\Docker\\Docker\\Docker Desktop.exe",
+            "$programFiles\\Docker\\Docker\\Docker Desktop.exe",
+            "$programFilesX86\\Docker\\Docker\\Docker Desktop.exe",
+            "C:\\Program Files\\Docker\\Docker\\Docker Desktop.exe",
+            "C:\\Program Files (x86)\\Docker\\Docker\\Docker Desktop.exe"
+        )
+        val found = candidates.firstOrNull { fileExists(it) }
+        if (found == null) {
+            println("[DockerChecker] Docker Desktop.exe не найден. Проверенные пути:")
+            candidates.forEach { println("[DockerChecker]   $it") }
+            return false
+        }
+        println("[DockerChecker] Найден: $found, запускаю...")
+        return launcher(listOf(found))
     }
 }

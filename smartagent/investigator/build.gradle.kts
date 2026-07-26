@@ -1,3 +1,6 @@
+import org.gradle.jvm.toolchain.JavaToolchainService
+import org.gradle.jvm.toolchain.JavaLanguageVersion
+
 plugins {
     alias(libs.plugins.kotlinJvm)
     alias(libs.plugins.kotlinSerialization)
@@ -37,8 +40,13 @@ tasks.register("jpackageDmg") {
 
     val shadowJarFile = tasks.shadowJar.flatMap { it.archiveFile }
     val buildDirProv  = layout.buildDirectory
+    val javaLauncher  = project.extensions.getByType<JavaToolchainService>()
+        .launcherFor { languageVersion.set(JavaLanguageVersion.of(21)) }
 
     doLast {
+        val jpackageBin = javaLauncher.get().executablePath.asFile
+            .parentFile.resolve("jpackage").absolutePath
+
         fun run(vararg cmd: String) {
             val exit = ProcessBuilder(*cmd).inheritIO().start().waitFor()
             check(exit == 0) { "Command failed: ${cmd.toList()}" }
@@ -62,7 +70,7 @@ tasks.register("jpackageDmg") {
         val iconFile = projectDir.resolve("Investigator.icns")
 
         val jpackageArgs = mutableListOf(
-            "jpackage",
+            jpackageBin,
             "--type", "app-image",
             "--name", "Investigator",
             "--input", staging.absolutePath,
@@ -114,8 +122,13 @@ tasks.register("jpackageWindows") {
 
     val shadowJarFile = tasks.shadowJar.flatMap { it.archiveFile }
     val buildDirProv  = layout.buildDirectory
+    val javaLauncher  = project.extensions.getByType<JavaToolchainService>()
+        .launcherFor { languageVersion.set(JavaLanguageVersion.of(21)) }
 
     doLast {
+        val jpackageBin = javaLauncher.get().executablePath.asFile
+            .parentFile.resolve("jpackage.exe").absolutePath
+
         fun run(vararg cmd: String) {
             val exit = ProcessBuilder(*cmd).inheritIO().start().waitFor()
             check(exit == 0) { "Command failed: ${cmd.toList()}" }
@@ -135,7 +148,7 @@ tasks.register("jpackageWindows") {
         val iconFile = projectDir.resolve("Investigator.ico")
 
         val args = mutableListOf(
-            "jpackage",
+            jpackageBin,
             "--type", "exe",
             "--name", "Investigator",
             "--input", staging.absolutePath,
