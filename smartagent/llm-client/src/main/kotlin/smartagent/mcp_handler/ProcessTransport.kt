@@ -75,6 +75,17 @@ class ProcessTransport(command: List<String>, workDir: String, env: Map<String, 
 
     fun exitCode(): Int? = if (!process.isAlive) runCatching { process.exitValue() }.getOrNull() else null
 
+    /** Non-destructive snapshot of buffered stdout lines (does not affect pollLine). */
+    fun peekStdout(): List<String> = responseQueue.toList()
+
+    /** Drains and returns all buffered stdout lines. Optionally waits [waitMs] first. */
+    fun drainStdout(waitMs: Long = 0): List<String> {
+        if (waitMs > 0) Thread.sleep(waitMs)
+        val result = mutableListOf<String>()
+        responseQueue.drainTo(result)
+        return result
+    }
+
     override fun close() {
         runCatching { writer.close() }
         process.destroy()
