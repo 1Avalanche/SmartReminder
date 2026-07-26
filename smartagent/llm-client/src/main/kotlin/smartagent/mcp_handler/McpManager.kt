@@ -129,7 +129,7 @@ object McpManager {
                     command = dockerCmd,
                     workDir = cwd,
                     autoConnect = true,
-                    startupDelayMs = if (isWindows) 500L else 2_000L
+                    startupDelayMs = if (isWindows) 3_000L else 2_000L
                 )
             )
         }

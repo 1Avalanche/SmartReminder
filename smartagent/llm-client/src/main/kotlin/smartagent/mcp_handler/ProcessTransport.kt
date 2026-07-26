@@ -73,6 +73,8 @@ class ProcessTransport(command: List<String>, workDir: String, env: Map<String, 
 
     val isAlive: Boolean get() = process.isAlive
 
+    fun exitCode(): Int? = if (!process.isAlive) runCatching { process.exitValue() }.getOrNull() else null
+
     override fun close() {
         runCatching { writer.close() }
         process.destroy()

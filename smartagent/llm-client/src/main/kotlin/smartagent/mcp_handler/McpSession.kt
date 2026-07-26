@@ -29,11 +29,13 @@ open class McpSession(
         val t: McpTransport = when (config.transportMode) {
             TransportMode.PROCESS -> {
                 println("[MCP] Starting ${config.name} (first run may download package)...")
+                println("[MCP] Command: ${config.command.joinToString(" ")}")
                 val pt = ProcessTransport(config.command, config.workDir, config.env)
                 if (config.startupDelayMs > 0) Thread.sleep(config.startupDelayMs)
                 if (!pt.isAlive) {
-                    val stderr = pt.drainStderr(0)
-                    error("Server process exited on startup. stderr: ${stderr.joinToString("; ").ifBlank { "<none>" }}")
+                    val stderr = pt.drainStderr(1000)
+                    val code = pt.exitCode()
+                    error("Server process exited on startup (exit code: $code). stderr: ${stderr.joinToString("; ").ifBlank { "<none>" }}")
                 }
                 pt
             }
