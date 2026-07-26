@@ -109,27 +109,16 @@ object McpManager {
             ?: System.getenv("GITHUB_CORP_HOST")
         if (githubToken != null) {
             val resolvedHost = githubHost ?: "https://github.lmru.tech"
-            val isWindows = System.getProperty("os.name", "").lowercase().contains("win")
-            // On Windows, run docker via `wsl docker` so stdin/stdout use Linux pipes
-            // instead of Windows named-pipe relay (docker.exe → Docker Desktop → WSL2),
-            // which causes the initialize request to never reach the container.
-            val dockerCmd = if (isWindows)
-                listOf("wsl", "docker", "run", "-i", "--rm",
-                    "-e", "GITHUB_PERSONAL_ACCESS_TOKEN=$githubToken",
-                    "-e", "GITHUB_HOST=$resolvedHost",
-                    "ghcr.io/github/github-mcp-server")
-            else
-                listOf("docker", "run", "-i", "--rm",
-                    "-e", "GITHUB_PERSONAL_ACCESS_TOKEN=$githubToken",
-                    "-e", "GITHUB_HOST=$resolvedHost",
-                    "ghcr.io/github/github-mcp-server")
             add(
                 McpServerConfig(
                     name = "github",
-                    command = dockerCmd,
+                    command = listOf("docker", "run", "-i", "--rm",
+                        "-e", "GITHUB_PERSONAL_ACCESS_TOKEN=$githubToken",
+                        "-e", "GITHUB_HOST=$resolvedHost",
+                        "ghcr.io/github/github-mcp-server"),
                     workDir = cwd,
                     autoConnect = true,
-                    startupDelayMs = if (isWindows) 3_000L else 2_000L
+                    startupDelayMs = 3_000L
                 )
             )
         }
