@@ -18,10 +18,12 @@ object NetworkLogger {
     private val timestampFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
 
     val logFile: File by lazy {
-        val path = listOf("investigator/network.log", "cli/network.log", "network.log")
-            .firstOrNull { File(it).parentFile?.exists() ?: false }
-            ?: "network.log"
-        File(path)
+        val candidates = listOf("investigator/network.log", "cli/network.log", "network.log")
+            .map { File(it) }
+            .filter { f -> (f.parentFile?.exists() ?: true) && (f.parentFile?.canWrite() ?: true) }
+        candidates.firstOrNull()
+            ?: File(System.getProperty("user.home"), ".config/smartagent/network.log")
+                .also { it.parentFile?.mkdirs() }
     }
 
     fun log(
