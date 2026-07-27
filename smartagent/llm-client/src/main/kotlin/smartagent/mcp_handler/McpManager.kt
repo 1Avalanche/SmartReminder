@@ -109,13 +109,18 @@ object McpManager {
             ?: System.getenv("GITHUB_CORP_HOST")
         if (githubToken != null) {
             val resolvedHost = githubHost ?: "https://github.lmru.tech"
+            val isWindows = System.getProperty("os.name", "").lowercase().contains("win")
+            val dockerArgs = listOf("docker", "run", "-i", "--rm",
+                "-e", "GITHUB_PERSONAL_ACCESS_TOKEN=$githubToken",
+                "-e", "GITHUB_HOST=$resolvedHost",
+                "ghcr.io/github/github-mcp-server")
+            // On Windows, Java anonymous pipe can't be forwarded to container stdin by Docker Desktop.
+            // Running via WSL routes stdin through a Linux pipe, which Docker can properly attach.
+            val command = if (isWindows) listOf("wsl") + dockerArgs else dockerArgs
             add(
                 McpServerConfig(
                     name = "github",
-                    command = listOf("docker", "run", "-i", "--rm",
-                        "-e", "GITHUB_PERSONAL_ACCESS_TOKEN=$githubToken",
-                        "-e", "GITHUB_HOST=$resolvedHost",
-                        "ghcr.io/github/github-mcp-server"),
+                    command = command,
                     workDir = cwd,
                     autoConnect = true,
                     startupDelayMs = 60_000L,
