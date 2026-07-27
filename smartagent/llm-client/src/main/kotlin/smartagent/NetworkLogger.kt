@@ -22,9 +22,14 @@ object NetworkLogger {
             .also { it.parentFile?.mkdirs() }
         listOf("investigator/network.log", "cli/network.log", "network.log")
             .map { File(it).absoluteFile }
-            .firstOrNull { f -> f.parentFile?.canWrite() == true }
+            .firstOrNull { f -> isWritable(f.parentFile ?: return@firstOrNull false) }
             ?: fallback
     }
+
+    private fun isWritable(dir: File): Boolean = runCatching {
+        val probe = File(dir, ".write_probe_${System.nanoTime()}")
+        probe.createNewFile().also { probe.delete() }
+    }.getOrDefault(false)
 
     fun log(
         url: String,
