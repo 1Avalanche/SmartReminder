@@ -5,6 +5,7 @@ import smartagent.ModelConfig
 import smartagent.OkHttpLLMGateway
 import smartagent.investigator.model.UiSearchResult
 import smartagent.mcp_handler.McpManager
+import smartagent.mcp_handler.McpServerConfig
 import java.io.File
 import java.io.FileInputStream
 import java.io.OutputStream
@@ -73,29 +74,60 @@ fun main() {
     val primaryModel = availableModels.first()
     val fallbackModel = availableModels.getOrNull(1)
 
-    val dockerChecker = DockerChecker()
-    when (dockerChecker.check()) {
-        DockerChecker.Result.NotInstalled -> {
-            println("${CYAN}Docker не установлен.$RESET")
-            println("Установите Docker Desktop: https://docs.docker.com/desktop/mac/install/")
-            println("После установки запустите Docker Desktop и повторите запуск.")
-            waitForExit()
-            return
-        }
-        DockerChecker.Result.NotRunning -> {
-            println("${CYAN}Docker не запущен. Запустите Docker Desktop и перезапустите приложение.$RESET")
-            waitForExit()
-            return
-        }
-        DockerChecker.Result.Ok -> Unit
-    }
+    val isWindows = System.getProperty("os.name", "").lowercase().contains("win")
 
-    val imagePresent = ProcessBuilder("docker", "image", "inspect", "ghcr.io/github/github-mcp-server")
-        .redirectErrorStream(true).start().waitFor() == 0
-    if (!imagePresent) {
-        println("${CYAN}Загружаю Docker-образ GitHub MCP (первый запуск, может занять несколько минут)...$RESET")
-        ProcessBuilder("docker", "pull", "ghcr.io/github/github-mcp-server")
-            .inheritIO().start().waitFor()
+    if (isWindows) {
+        val githubToken = Config.localProperties["GITHUB_CORP_TOKEN"] ?: System.getenv("GITHUB_CORP_TOKEN")
+        val githubHost = Config.localProperties["GITHUB_CORP_HOST"]
+            ?: System.getenv("GITHUB_CORP_HOST")
+            ?: "https://github.lmru.tech"
+        if (githubToken.isNullOrBlank()) {
+            println("${CYAN}GITHUB_CORP_TOKEN не задан. Проверьте .properties.$RESET")
+            waitForExit()
+            return
+        }
+        val binaryFile = runCatching {
+            McpBinaryDownloader().ensureBinary { println("${CYAN}$it$RESET") }
+        }.getOrElse { e ->
+            println("${CYAN}Не удалось скачать GitHub MCP Server: ${e.message}$RESET")
+            println("${GRAY}Проверьте доступ к api.github.com и github.com.$RESET")
+            waitForExit()
+            return
+        }
+        McpManager.registerServer(McpServerConfig(
+            name = "github",
+            command = listOf(binaryFile.absolutePath, "stdio"),
+            workDir = binaryFile.parent,
+            env = mapOf("GITHUB_PERSONAL_ACCESS_TOKEN" to githubToken, "GITHUB_HOST" to githubHost),
+            autoConnect = true,
+            startupDelayMs = 60_000L,
+            readinessSignal = "GitHub MCP Server running on stdio"
+        ))
+    } else {
+        val dockerChecker = DockerChecker()
+        when (dockerChecker.check()) {
+            DockerChecker.Result.NotInstalled -> {
+                println("${CYAN}Docker не установлен.$RESET")
+                println("Установите Docker Desktop: https://docs.docker.com/desktop/mac/install/")
+                println("После установки запустите Docker Desktop и повторите запуск.")
+                waitForExit()
+                return
+            }
+            DockerChecker.Result.NotRunning -> {
+                println("${CYAN}Docker не запущен. Запустите Docker Desktop и перезапустите приложение.$RESET")
+                waitForExit()
+                return
+            }
+            DockerChecker.Result.Ok -> Unit
+        }
+
+        val imagePresent = ProcessBuilder("docker", "image", "inspect", "ghcr.io/github/github-mcp-server")
+            .redirectErrorStream(true).start().waitFor() == 0
+        if (!imagePresent) {
+            println("${CYAN}Загружаю Docker-образ GitHub MCP (первый запуск, может занять несколько минут)...$RESET")
+            ProcessBuilder("docker", "pull", "ghcr.io/github/github-mcp-server")
+                .inheritIO().start().waitFor()
+        }
     }
 
     println("${CYAN}Подключение к GitHub MCP...$RESET")
@@ -106,11 +138,11 @@ fun main() {
         e.cause?.let { println("${GRAY}  caused by [${it.javaClass.simpleName}]: ${it.message}$RESET") }
         val stderrLines = McpManager.getSession("github")?.drainServerOutput() ?: emptyList()
         if (stderrLines.isEmpty()) {
-            println("${GRAY}  [docker stderr] <пусто — процесс мог не запуститься>$RESET")
+            println("${GRAY}  [MCP stderr] <пусто — процесс мог не запуститься>$RESET")
         } else {
-            stderrLines.forEach { line -> println("${GRAY}  [docker stderr] $line$RESET") }
+            stderrLines.forEach { line -> println("${GRAY}  [MCP stderr] $line$RESET") }
         }
-        println("Проверьте Docker или обратитесь к разработчику.")
+        println("Обратитесь к разработчику.")
         waitForExit()
         return
     }

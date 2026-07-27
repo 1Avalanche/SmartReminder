@@ -26,6 +26,7 @@ object McpManager {
     /**
      * Starts and initializes a server. If already connected and [force] is false, returns
      * the existing session without restarting.
+     * extraServers take precedence over builtinServers — allows callers to override defaults.
      */
     fun initServer(name: String, force: Boolean = false): McpSession {
         val existing = sessions[name]
@@ -34,7 +35,7 @@ object McpManager {
         existing?.close()
         sessions.remove(name)
 
-        val config = allServers.find { it.name == name }
+        val config = (extraServers + builtinServers).find { it.name == name }
             ?: throw IllegalArgumentException("Unknown server: \"$name\". Run 'mcp list' to see available servers.")
 
         val session = McpSession(name, config)
@@ -74,7 +75,7 @@ object McpManager {
         threads.forEach { it.join() }
     }
 
-    /** Register a custom server that is not in the built-in list. */
+    /** Register a custom server that is not in the built-in list, or override a builtin. */
     fun registerServer(config: McpServerConfig) {
         extraServers.removeAll { it.name == config.name }
         extraServers.add(config)
@@ -109,18 +110,13 @@ object McpManager {
             ?: System.getenv("GITHUB_CORP_HOST")
         if (githubToken != null) {
             val resolvedHost = githubHost ?: "https://github.lmru.tech"
-            val isWindows = System.getProperty("os.name", "").lowercase().contains("win")
-            val dockerArgs = listOf("docker", "run", "-i", "--rm",
-                "-e", "GITHUB_PERSONAL_ACCESS_TOKEN=$githubToken",
-                "-e", "GITHUB_HOST=$resolvedHost",
-                "ghcr.io/github/github-mcp-server")
-            // On Windows, Java anonymous pipe can't be forwarded to container stdin by Docker Desktop.
-            // Running via WSL routes stdin through a Linux pipe, which Docker can properly attach.
-            val command = if (isWindows) listOf("wsl") + dockerArgs else dockerArgs
             add(
                 McpServerConfig(
                     name = "github",
-                    command = command,
+                    command = listOf("docker", "run", "-i", "--rm",
+                        "-e", "GITHUB_PERSONAL_ACCESS_TOKEN=$githubToken",
+                        "-e", "GITHUB_HOST=$resolvedHost",
+                        "ghcr.io/github/github-mcp-server"),
                     workDir = cwd,
                     autoConnect = true,
                     startupDelayMs = 60_000L,
