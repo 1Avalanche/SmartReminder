@@ -2,6 +2,7 @@ package smartagent.mcp_handler
 
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonPrimitive
+import smartagent.NetworkLogger
 
 enum class McpConnectionState { DISCONNECTED, CONNECTING, CONNECTED }
 
@@ -35,25 +36,23 @@ open class McpSession(
                     if (arg.startsWith("GITHUB_PERSONAL_ACCESS_TOKEN=")) "GITHUB_PERSONAL_ACCESS_TOKEN=<redacted>" else arg
                 }
                 val githubHost = config.command.firstOrNull { it.startsWith("GITHUB_HOST=") }
-                    ?.removePrefix("GITHUB_HOST=") ?: "<not found in command>"
+                    ?.removePrefix("GITHUB_HOST=") ?: config.env["GITHUB_HOST"] ?: "<not found>"
                 val tokenPresent = config.command.any {
                     it.startsWith("GITHUB_PERSONAL_ACCESS_TOKEN=") && it.length > "GITHUB_PERSONAL_ACCESS_TOKEN=".length
-                }
+                } || config.env.containsKey("GITHUB_PERSONAL_ACCESS_TOKEN")
 
-                println("[MCP-debug] === ${config.name} startup ===")
-                println("[MCP-debug] Command     : $sanitizedCmd")
-                println("[MCP-debug] WorkDir     : ${config.workDir}")
-                println("[MCP-debug] OS          : ${System.getProperty("os.name")} | isWindows=$isWindows")
-                println("[MCP-debug] GITHUB_HOST : $githubHost | token present: $tokenPresent")
-                println("[MCP-debug] PATH        : ${System.getenv("PATH")}")
-
-                println("[MCP] Starting ${config.name} (first run may download package)...")
+                log("=== ${config.name} startup ===")
+                log("Command     : $sanitizedCmd")
+                log("WorkDir     : ${config.workDir}")
+                log("OS          : ${System.getProperty("os.name")} | isWindows=$isWindows")
+                log("GITHUB_HOST : $githubHost | token present: $tokenPresent")
+                log("PATH        : ${System.getenv("PATH")}")
 
                 val pt = ProcessTransport(config.command, config.workDir, config.env, config.readinessSignal)
                 if (config.readinessSignal != null) {
                     val timeoutMs = config.startupDelayMs.coerceAtLeast(60_000)
                     val signalReceived = pt.awaitReady(timeoutMs)
-                    println("[MCP-debug] Readiness signal '${config.readinessSignal}': received=$signalReceived after ${System.currentTimeMillis() - startMs}ms")
+                    log("Readiness signal '${config.readinessSignal}': received=$signalReceived after ${System.currentTimeMillis() - startMs}ms")
                 } else if (config.startupDelayMs > 0) {
                     Thread.sleep(config.startupDelayMs)
                 }
@@ -61,19 +60,17 @@ open class McpSession(
                 val elapsedMs = System.currentTimeMillis() - startMs
                 val stderrBeforeInit = pt.drainStderr(0)
                 val stdoutBeforeInit = pt.peekStdout()
-                println("[MCP-debug] After startup wait (${elapsedMs}ms): isAlive=${pt.isAlive}")
-                if (stdoutBeforeInit.isNotEmpty())
-                    println("[MCP-debug] stdout before init: ${stdoutBeforeInit.joinToString(" | ")}")
-                if (stderrBeforeInit.isNotEmpty())
-                    println("[MCP-debug] stderr before init: ${stderrBeforeInit.joinToString(" | ")}")
+                log("After startup wait (${elapsedMs}ms): isAlive=${pt.isAlive}")
+                if (stdoutBeforeInit.isNotEmpty()) log("stdout before init: ${stdoutBeforeInit.joinToString(" | ")}")
+                if (stderrBeforeInit.isNotEmpty()) log("stderr before init: ${stderrBeforeInit.joinToString(" | ")}")
 
                 if (!pt.isAlive) {
                     val extraStderr = pt.drainStderr(1000)
                     val extraStdout = pt.drainStdout(0)
                     val code = pt.exitCode()
-                    println("[MCP-debug] Process dead: exitCode=$code elapsed=${System.currentTimeMillis() - startMs}ms")
-                    if (extraStdout.isNotEmpty()) println("[MCP-debug] stdout (extra): ${extraStdout.joinToString(" | ")}")
-                    if (extraStderr.isNotEmpty()) println("[MCP-debug] stderr (extra): ${extraStderr.joinToString(" | ")}")
+                    log("Process dead: exitCode=$code elapsed=${System.currentTimeMillis() - startMs}ms")
+                    if (extraStdout.isNotEmpty()) log("stdout (extra): ${extraStdout.joinToString(" | ")}")
+                    if (extraStderr.isNotEmpty()) log("stderr (extra): ${extraStderr.joinToString(" | ")}")
                     val allStderr = stderrBeforeInit + extraStderr
                     error("Server process exited on startup (exit code: $code). stderr: ${allStderr.joinToString("; ").ifBlank { "<none>" }}")
                 }
@@ -88,25 +85,25 @@ open class McpSession(
         transport = t
         val c = McpClient(t)
         try {
-            println("[MCP-debug] Before initialize()")
+            log("Before initialize()")
             c.initialize()
-            println("[MCP-debug] After initialize()")
+            log("After initialize()")
         } catch (e: Exception) {
             val elapsed = System.currentTimeMillis() - startMs
-            println("[MCP-debug] initialize() threw ${e.javaClass.simpleName} after ${elapsed}ms: ${e.message}")
-            e.printStackTrace(System.out)
+            log("initialize() threw ${e.javaClass.simpleName} after ${elapsed}ms: ${e.message}")
+            log(e.stackTraceToString())
             val pt = t as? ProcessTransport
             if (pt != null) {
                 val stderr = pt.drainStderr(500)
                 val stdout = pt.drainStdout(0)
-                println("[MCP-debug] isAlive=${pt.isAlive} exitCode=${pt.exitCode()} elapsed=${elapsed}ms")
-                if (stdout.isNotEmpty()) println("[MCP-debug] stdout: ${stdout.joinToString(" | ")}")
-                if (stderr.isNotEmpty()) println("[MCP-debug] stderr: ${stderr.joinToString(" | ")}")
+                log("isAlive=${pt.isAlive} exitCode=${pt.exitCode()} elapsed=${elapsed}ms")
+                if (stdout.isNotEmpty()) log("stdout: ${stdout.joinToString(" | ")}")
+                if (stderr.isNotEmpty()) log("stderr: ${stderr.joinToString(" | ")}")
             }
             throw e
         }
 
-        println("[MCP-debug] Connected successfully in ${System.currentTimeMillis() - startMs}ms")
+        log("Connected successfully in ${System.currentTimeMillis() - startMs}ms")
         client = c
         state = McpConnectionState.CONNECTED
     }
@@ -127,4 +124,6 @@ open class McpSession(
         client = null
         transport = null
     }
+
+    private fun log(msg: String) = NetworkLogger.logEvent("[MCP-debug ${config.name}]", msg)
 }

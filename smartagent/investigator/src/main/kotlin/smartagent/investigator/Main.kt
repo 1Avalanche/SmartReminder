@@ -76,6 +76,8 @@ fun main() {
 
     val isWindows = System.getProperty("os.name", "").lowercase().contains("win")
 
+    println("${GRAY}Загружаю данные... Пожалуйста, подождите$RESET")
+
     if (isWindows) {
         val githubToken = Config.localProperties["GITHUB_CORP_TOKEN"] ?: System.getenv("GITHUB_CORP_TOKEN")
         val githubHost = Config.localProperties["GITHUB_CORP_HOST"]
@@ -87,7 +89,7 @@ fun main() {
             return
         }
         val binaryFile = runCatching {
-            McpBinaryDownloader().ensureBinary { println("${CYAN}$it$RESET") }
+            McpBinaryDownloader().ensureBinary { msg -> println("${GRAY}$msg$RESET") }
         }.getOrElse { e ->
             println("${CYAN}Не удалось скачать GitHub MCP Server: ${e.message}$RESET")
             println("${GRAY}Проверьте доступ к api.github.com и github.com.$RESET")
@@ -124,25 +126,20 @@ fun main() {
         val imagePresent = ProcessBuilder("docker", "image", "inspect", "ghcr.io/github/github-mcp-server")
             .redirectErrorStream(true).start().waitFor() == 0
         if (!imagePresent) {
-            println("${CYAN}Загружаю Docker-образ GitHub MCP (первый запуск, может занять несколько минут)...$RESET")
+            println("${GRAY}Загружаю Docker-образ GitHub MCP (первый запуск)...$RESET")
             ProcessBuilder("docker", "pull", "ghcr.io/github/github-mcp-server")
-                .inheritIO().start().waitFor()
+                .redirectErrorStream(true).start().waitFor()
         }
     }
 
-    println("${CYAN}Подключение к GitHub MCP...$RESET")
     val githubSession = runCatching {
         McpManager.initServer("github")
     }.getOrElse { e ->
         println("${CYAN}Не удалось подключиться к GitHub MCP [${e.javaClass.simpleName}]: ${e.message}$RESET")
         e.cause?.let { println("${GRAY}  caused by [${it.javaClass.simpleName}]: ${it.message}$RESET") }
         val stderrLines = McpManager.getSession("github")?.drainServerOutput() ?: emptyList()
-        if (stderrLines.isEmpty()) {
-            println("${GRAY}  [MCP stderr] <пусто — процесс мог не запуститься>$RESET")
-        } else {
-            stderrLines.forEach { line -> println("${GRAY}  [MCP stderr] $line$RESET") }
-        }
-        println("Обратитесь к разработчику.")
+        stderrLines.forEach { line -> println("${GRAY}  [MCP stderr] $line$RESET") }
+        println("${GRAY}Подробности в ~/.config/smartagent/startup.log$RESET")
         waitForExit()
         return
     }

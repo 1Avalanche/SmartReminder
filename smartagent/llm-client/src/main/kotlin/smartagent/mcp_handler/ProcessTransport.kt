@@ -35,14 +35,14 @@ class ProcessTransport(
                 try {
                     while (true) {
                         val line = reader.readLine() ?: break
-                        println("[MCP-transport] <<< $line")
+                        smartagent.NetworkLogger.logEvent("[MCP-transport]", "<<< $line")
                         if (line.isNotBlank()) responseQueue.put(line)
                     }
                 } catch (e: InterruptedException) {
                     Thread.currentThread().interrupt()
                 } catch (e: Exception) { /* stream closed */ }
             }
-            println("[MCP-transport] stdout stream closed")
+            smartagent.NetworkLogger.logEvent("[MCP-transport]", "stdout stream closed")
         }
 
         // Buffer server stderr; also stream to NetworkLogger for live diagnostics
@@ -70,7 +70,7 @@ class ProcessTransport(
         readinessLatch?.await(timeoutMs, TimeUnit.MILLISECONDS) ?: false
 
     override fun send(message: String) {
-        println("[MCP-transport] >>> $message")
+        smartagent.NetworkLogger.logEvent("[MCP-transport]", ">>> $message")
         writer.write(message)
         writer.write("\n")  // always LF — MCP server runs in Linux container, \r\n breaks protocol
         writer.flush()
@@ -79,7 +79,7 @@ class ProcessTransport(
     /** Blocks up to [timeoutMs] for next line from server stdout. Returns null on timeout. */
     override fun pollLine(timeoutMs: Long): String? {
         val line = responseQueue.poll(timeoutMs, TimeUnit.MILLISECONDS)
-        if (line == null) println("[MCP-transport] pollLine timeout after ${timeoutMs}ms")
+        if (line == null) smartagent.NetworkLogger.logEvent("[MCP-transport]", "pollLine timeout after ${timeoutMs}ms")
         return line
     }
 
