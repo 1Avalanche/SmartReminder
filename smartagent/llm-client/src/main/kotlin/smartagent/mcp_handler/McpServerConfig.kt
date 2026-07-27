@@ -11,5 +11,7 @@ data class McpServerConfig(
     val apiKey: String? = null,
     val env: Map<String, String> = emptyMap(),
     val autoConnect: Boolean = true,
-    val startupDelayMs: Long = 2_000
+    val startupDelayMs: Long = 2_000,
+    /** When set, connect() waits for this substring in server stderr instead of fixed sleep. */
+    val readinessSignal: String? = null
 )

@@ -118,7 +118,8 @@ object McpManager {
                         "ghcr.io/github/github-mcp-server"),
                     workDir = cwd,
                     autoConnect = true,
-                    startupDelayMs = 3_000L
+                    startupDelayMs = 60_000L,
+                    readinessSignal = "GitHub MCP Server running on stdio"
                 )
             )
         }

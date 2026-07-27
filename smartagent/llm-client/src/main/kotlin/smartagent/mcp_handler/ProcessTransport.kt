@@ -5,14 +5,21 @@ import java.io.BufferedWriter
 import java.io.File
 import java.io.InputStreamReader
 import java.io.OutputStreamWriter
+import java.util.concurrent.CountDownLatch
 import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.TimeUnit
 
-class ProcessTransport(command: List<String>, workDir: String, env: Map<String, String> = emptyMap()) : McpTransport {
+class ProcessTransport(
+    command: List<String>,
+    workDir: String,
+    env: Map<String, String> = emptyMap(),
+    readinessSignal: String? = null
+) : McpTransport {
     private val process: Process
     private val writer: BufferedWriter
     private val responseQueue = LinkedBlockingQueue<String>()
     private val stderrQueue = LinkedBlockingQueue<String>()
+    private val readinessLatch = if (readinessSignal != null) CountDownLatch(1) else null
 
     init {
         process = ProcessBuilder(command)
@@ -28,12 +35,14 @@ class ProcessTransport(command: List<String>, workDir: String, env: Map<String, 
                 try {
                     while (true) {
                         val line = reader.readLine() ?: break
+                        println("[MCP-transport] <<< $line")
                         if (line.isNotBlank()) responseQueue.put(line)
                     }
                 } catch (e: InterruptedException) {
                     Thread.currentThread().interrupt()
                 } catch (e: Exception) { /* stream closed */ }
             }
+            println("[MCP-transport] stdout stream closed")
         }
 
         // Buffer server stderr; also stream to NetworkLogger for live diagnostics
@@ -44,21 +53,35 @@ class ProcessTransport(command: List<String>, workDir: String, env: Map<String, 
                         val line = reader.readLine() ?: break
                         stderrQueue.put(line)
                         smartagent.NetworkLogger.logEvent("[MCP-stderr]", line)
+                        if (readinessSignal != null && line.contains(readinessSignal)) {
+                            readinessLatch?.countDown()
+                        }
                     }
                 } catch (e: Exception) { /* stream closed */ }
             }
         }
     }
 
+    /**
+     * Blocks until the readiness signal line appears in stderr, or [timeoutMs] elapses.
+     * Returns true if signal received, false on timeout or if no signal was configured.
+     */
+    fun awaitReady(timeoutMs: Long): Boolean =
+        readinessLatch?.await(timeoutMs, TimeUnit.MILLISECONDS) ?: false
+
     override fun send(message: String) {
+        println("[MCP-transport] >>> $message")
         writer.write(message)
         writer.write("\n")  // always LF — MCP server runs in Linux container, \r\n breaks protocol
         writer.flush()
     }
 
     /** Blocks up to [timeoutMs] for next line from server stdout. Returns null on timeout. */
-    override fun pollLine(timeoutMs: Long): String? =
-        responseQueue.poll(timeoutMs, TimeUnit.MILLISECONDS)
+    override fun pollLine(timeoutMs: Long): String? {
+        val line = responseQueue.poll(timeoutMs, TimeUnit.MILLISECONDS)
+        if (line == null) println("[MCP-transport] pollLine timeout after ${timeoutMs}ms")
+        return line
+    }
 
     /**
      * Waits [waitMs] for any late-arriving stderr lines, then returns and clears the buffer.

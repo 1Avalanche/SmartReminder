@@ -49,13 +49,19 @@ open class McpSession(
 
                 println("[MCP] Starting ${config.name} (first run may download package)...")
 
-                val pt = ProcessTransport(config.command, config.workDir, config.env)
-                if (config.startupDelayMs > 0) Thread.sleep(config.startupDelayMs)
+                val pt = ProcessTransport(config.command, config.workDir, config.env, config.readinessSignal)
+                if (config.readinessSignal != null) {
+                    val timeoutMs = config.startupDelayMs.coerceAtLeast(60_000)
+                    val signalReceived = pt.awaitReady(timeoutMs)
+                    println("[MCP-debug] Readiness signal '${config.readinessSignal}': received=$signalReceived after ${System.currentTimeMillis() - startMs}ms")
+                } else if (config.startupDelayMs > 0) {
+                    Thread.sleep(config.startupDelayMs)
+                }
 
                 val elapsedMs = System.currentTimeMillis() - startMs
                 val stderrBeforeInit = pt.drainStderr(0)
                 val stdoutBeforeInit = pt.peekStdout()
-                println("[MCP-debug] After delay (${elapsedMs}ms): isAlive=${pt.isAlive}")
+                println("[MCP-debug] After startup wait (${elapsedMs}ms): isAlive=${pt.isAlive}")
                 if (stdoutBeforeInit.isNotEmpty())
                     println("[MCP-debug] stdout before init: ${stdoutBeforeInit.joinToString(" | ")}")
                 if (stderrBeforeInit.isNotEmpty())
@@ -82,7 +88,9 @@ open class McpSession(
         transport = t
         val c = McpClient(t)
         try {
+            println("[MCP-debug] Before initialize()")
             c.initialize()
+            println("[MCP-debug] After initialize()")
         } catch (e: Exception) {
             val elapsed = System.currentTimeMillis() - startMs
             println("[MCP-debug] initialize() threw ${e.javaClass.simpleName} after ${elapsed}ms: ${e.message}")
