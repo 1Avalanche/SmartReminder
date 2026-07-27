@@ -51,6 +51,13 @@ jobs:
             "GPU_STACK_URL=${{ secrets.INVESTIGATOR_GPU_STACK_URL }}"
           ) | Set-Content -Path "smartagent\investigator\.properties" -Encoding utf8
 
+      - name: Write channels.json from secret
+        shell: pwsh
+        env:
+          CHANNELS_JSON: ${{ secrets.INVESTIGATOR_CHANNELS_JSON }}
+        run: |
+          $env:CHANNELS_JSON | Out-File -FilePath "channels.json" -Encoding utf8 -NoNewline
+
       - name: Build Windows installer
         working-directory: smartagent
         run: ./gradlew :investigator:jpackageWindows
